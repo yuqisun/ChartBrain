@@ -24,6 +24,17 @@ curl -X POST http://127.0.0.1:8000/v1/charts \
   -d '{"query":"按月份看营收趋势","library":"highcharts","columns":[{"name":"month","type":"string"},{"name":"revenue","type":"number"}]}'
 ```
 
+## 配置（.env）
+
+复制 `server/.env.example` 为 `server/.env`（已 gitignore）并填入 LLM key：
+
+| 变量 | 说明 | 默认 |
+|---|---|---|
+| `CHARTBRAIN_LLM_PROVIDER` | `mock`（无需 key）\| `openai-compatible` | `mock` |
+| `OPENAI_API_KEY` | 厂商 API key | 空 |
+| `OPENAI_BASE_URL` | OpenAI 兼容 base（DeepSeek/通义等） | `https://api.deepseek.com/v1` |
+| `CHARTBRAIN_OPENAI_MODEL` | 模型名 | `deepseek-chat` |
+
 ## 目录
 
 ```
