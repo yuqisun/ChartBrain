@@ -14,8 +14,8 @@
 
 独立于业务服务的**图表智能中间件**，由三部分组成：
 
-1. **chartbrain-server**（Python / FastAPI）：接收消费端的自然语言 + 所用库声明 + 列 schema/样例，让 LLM 产出**轻量中性 chart spec + 声明式变换计划**，再由内置的**确定性转换器**转成目标库（Highcharts / ECharts）配置。
-2. **@chartbrain/sdk**（TypeScript）：在**消费端本地**执行声明式变换计划，把真实数据绑定进图表配置。
+1. **chartbrain-server**（Python / FastAPI）：接收消费端的自然语言 + 所用库声明 + 列 schema/样例，让 LLM 产出**轻量中性 chart spec + 声明式变换计划**，做 L1/L2 校验后返回——**无状态、不产库配置**（D13）。
+2. **@chartbrain/sdk**（TypeScript）：在**消费端本地**完成全部确定性步骤（D13）——执行声明式变换计划 → 由**确定性转换器**把中性 spec 转成目标库配置（Highcharts 自研 / ECharts 经 flint-js，D12）→ 把真实数据绑定进配置。
 3. 消费端接入后，用**自己现有的图表库**渲染。
 
 ### 1.3 非目标（守住边界）
@@ -42,6 +42,7 @@
 | D10 | 交付形态（远期） | 提供 REST 与 MCP 两种消费通道 |
 | D11 | 落地顺序 | **首版单库落地 Highcharts**（转换器先行实现），ECharts 作为后续里程碑（M5）；D5 中性 spec 保持库无关，Highcharts 方言只进转换器 |
 | D12 | Flint 定位（Spike 结论，2026-09，读源码验证） | 微软 Flint（MIT，0.5.x，TS 库）**不作服务端引擎**：汇编要求 `data.values` 在场（`core/types.ts`），且 flint-py 未发布、仅 Vega-Lite 后端。**可作消费端 SDK 内的汇编引擎**：M5 的 ECharts 后端候选 = SDK 内调 flint-js `assembleECharts`（数据先由我们的变换运行时预聚合再喂入，Flint 对预聚合表不做重复聚合，`vegalite/assemble.ts` 已注明）。Highcharts 无后端（现有：VL/ECharts/Chart.js/Plotly/Excel）→ 转换器自研（D11）。声明式 filter / min / max / median 等超出 Flint 输入面（encoding 级 aggregate 仅 count/sum/average/mean）→ 变换 DSL 自研 |
+| D13 | 转换器执行位置（2026-09 定） | **确定性转换器随 @chartbrain/sdk 以 TS 发布、在消费端本地执行**（与 D12 对称，双库一致）；server 只做 LLM + L1/L2 校验 + 返回 spec/变换计划（无状态、不见数据）；变换、转换、绑定、L3 冒烟等全部确定性步骤在 SDK 完成 |
 
 ---
 
@@ -51,10 +52,10 @@
 
 ```
 ┌────────────────────────────────────────────────────────────┐
-│ chartbrain-server (Python/FastAPI)                         │
+│ chartbrain-server (Python/FastAPI)  无状态（D13）           │
 │                                                            │
 │  API 层                                                     │
-│   ├─ POST /v1/charts         自然语言 → spec + 库配置        │
+│   ├─ POST /v1/charts         自然语言 → spec + 变换计划      │
 │   └─ POST /v1/validate       （远期）仅校验 spec/变换计划     │
 │                                                            │
 │  LLM Provider 抽象层（D4）                                   │
@@ -63,20 +64,18 @@
 │                                                            │
 │  Validator（D9）                                            │
 │   ├─ L1 JSON Schema（结构/enum）                             │
-│   ├─ L2 字段引用命中真实列 schema                             │
-│   └─ L3 渲染冒烟（确定性转换器能产出合法配置）                  │
-│                                                            │
-│  Converter registry（D6）— 确定性代码                         │
-│   ├─ neutral-spec → highcharts option                       │
-│   └─ neutral-spec → echarts option                          │
+│   └─ L2 字段引用命中真实列 schema（白名单）                   │
 └───────────────┬────────────────────────────────────────────┘
-                │ {chart_spec, chart_config, …}
+                │ {request_id, chart_spec, transform_plan, …}
                 ▼
 ┌────────────────────────────────────────────────────────────┐
-│ @chartbrain/sdk (TypeScript, 消费端本地)                    │
+│ @chartbrain/sdk (TypeScript, 消费端本地) — 确定性步骤全在这   │
 │  ① Transform runtime：执行 transform_plan（D7）             │
 │      filter / aggregate / sort / limit …（闭集算子）         │
-│  ② Data binder：把结果数据绑定进 chart_config 的 series      │
+│  ② Converter（D13）：neutral spec → 库配置                  │
+│      highcharts（自研） / echarts（经 flint-js，D12）        │
+│  ③ Data binder：把结果数据绑定进库配置的 series              │
+│  ④ L3 冒烟（可选）：golden / 可渲染自检                     │
 └───────────────┬────────────────────────────────────────────┘
                 ▼
     消费端用自己现有图表库渲染（Highcharts / ECharts）
@@ -87,7 +86,7 @@
 | 关注点 | 归属 | 原因 |
 |---|---|---|
 | 「画什么图、怎么变换」的决策 | LLM（受约束） | 语义理解只能靠 LLM |
-| 「怎么把 spec 变成库配置」 | 确定性转换器 | 库 schema 繁琐易错，LLM 直出会静默出错 |
+| 「怎么把 spec 变成库配置」 | SDK 内确定性转换器（D13） | 库 schema 繁琐易错，LLM 直出会静默出错；库知识以 TS 随 SDK 发布 |
 | 「数据变换的实际执行」 | SDK（确定性） | 全量数据在消费端、结果可测试可复现 |
 | 「字段是否合法」 | L2 校验（对照真实列 schema） | 权限与正确性在执行期强制（原则 5） |
 | 数值/统计计算 | 确定性代码 | LLM 永不碰数值（原则 1） |
@@ -96,9 +95,9 @@
 
 1. 消费端收集：`query`（自然语言）+ `library`（`highcharts` / `echarts`）+ `columns`（列 schema + 类型）+ `data_sample`（≤N 行样例，可脱敏）。
 2. 调用 `POST /v1/charts`。
-3. 服务端：组装受控上下文（列 schema 指纹 + 库能力声明 + 少量 NL→spec 范例）→ LLM 结构化输出中性 spec + 变换计划 → L1/L2/L3 校验 → 确定性转换器产出 `chart_config`。
-4. 返回 `{ request_id, chart_spec, chart_config, warnings }`。
-5. 消费端 `@chartbrain/sdk`：执行 `transform_plan`（在本地全量数据上）→ 数据绑定进 `chart_config` → 交给自己的 Highcharts/ECharts 渲染。
+3. 服务端：组装受控上下文（列 schema 指纹 + 库能力声明 + 少量 NL→spec 范例）→ LLM 结构化输出中性 spec + 变换计划 → L1/L2 校验（L3 冒烟移到 SDK，D13）。
+4. 返回 `{ request_id, chart_spec, transform_plan, warnings }`。
+5. 消费端 `@chartbrain/sdk`（全部确定性步骤，D13）：执行 `transform_plan`（本地全量数据）→ 确定性转换器产出目标库配置（Highcharts 自研 / ECharts 经 flint-js）→ 数据绑定 →（可选）L3 冒烟 → 交给自己的 Highcharts/ECharts 渲染。
 
 ---
 
@@ -158,7 +157,7 @@
 |---|---|---|
 | L1 | 结构合法（类型、enum、必填、无多余字段） | JSON Schema + `additionalProperties:false` |
 | L2 | 字段引用命中真实列、类型匹配（numeric 列不做 group_by 等） | 对照消费端上报的 `columns` 做**白名单**校验 |
-| L3 | 确定性转换器能产出**合法且可渲染**的库配置 | 转换器冒烟 + （远期）渲染比对快照 |
+| L3 | 确定性转换器能产出**合法且可渲染**的库配置 | SDK 内转换器冒烟（D13）+（远期）渲染比对快照 |
 
 修复回路：**只允许一轮** `validate → repair（把结构化错误回喂 LLM）→ revalidate`，超出一轮即报错返回，由消费端引导用户改述（原则：歧义/失败时澄清而非硬答）。
 
@@ -187,14 +186,14 @@
   }
 }
 
-// 响应 200
+// 响应 200（库配置由 SDK 生成，D13；chart_spec 内含 transform_plan）
 {
   "request_id": "cb_…",
   "library": "highcharts",
   "chart_spec": { /* 4.1 的中性 spec */ },
-  "chart_config": { /* 目标库配置；series 数据为占位引用，待 SDK 绑定 */ },
   "warnings": [ "month 被当作分类轴处理（可指定 date 粒度）" ]
 }
+// 消费端 @chartbrain/sdk：执行变换 → 转换（Highcharts 自研 / ECharts 经 flint-js）→ 绑定数据 → 渲染
 
 // 响应 422（校验失败） / 409（歧义，需澄清）
 ```
@@ -202,7 +201,7 @@
 ### 关于数据与隐私（D8）
 
 - 服务端**只**需要 `columns` + 少量 `data_sample`，用于 L2 校验与 LLM 理解上下文；
-- 全量真实数据**不离开消费端**，由 SDK 本地执行变换；
+- 全量真实数据**不离开消费端**，变换、转换、绑定全部由 SDK 本地执行（D13）；
 - 若个别场景确实需要服务端看更多数据（如复杂关联分析），作为显式 opt-in 选项，逐请求声明。
 
 ---
@@ -248,7 +247,7 @@
 ### 8.3 竞品跟踪（Flint 定位已由 D12 决定）
 
 - **Microsoft Flint**（`microsoft/flint-chart`，MIT，0.5.x，月更）是本项目最近的参照与潜在竞品。D12 已定：不作服务端引擎；**作为消费端 SDK 内的可选汇编引擎**（M5 ECharts 后端候选，顺带获得其语义/主题/布局能力）；「接受 Flint input 作为 ChartBrain spec 的兼容输入方言」保留为远期互操作方向。
-- 推论（待确认，涉及转换器运行位置）：D12 使 ECharts 汇编落在 SDK 内（需要本地数据），为保持 Highcharts/ECharts 双库对称，Highcharts 转换器同样随 SDK 发布并执行更一致——server 只负责 LLM + 校验 + 返回 spec/变换计划，所有确定性步骤（变换 + 转换 + 绑定）在消费端 SDK 完成。
+- **D13（已定）转换器随 SDK 执行**：D12 使 ECharts 汇编落在 SDK 内（需要本地数据）；为保持 Highcharts/ECharts 双库对称，Highcharts 转换器同样随 @chartbrain/sdk 以 TS 发布并在消费端执行。server 只负责 LLM + L1/L2 校验 + 返回 spec/变换计划（无状态、不见数据）；变换、转换、绑定、L3 冒烟等全部确定性步骤在 SDK 完成。
 
 ---
 

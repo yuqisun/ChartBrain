@@ -21,30 +21,32 @@ ChartBrain 把这些「图表智能」从业务服务里解耦出来，做成一
 └──────────────────┬───────────────────────────┘
                    ▼
 ┌──────────────────────────────────────────────┐
-│ ChartBrain 服务端（Python / FastAPI）         │
+│ ChartBrain 服务端（Python / FastAPI）· 无状态 │
 │ ① LLM（可插拔多 Provider）理解问题             │
 │    产出「轻量中性 spec + 声明式变换计划」       │
-│ ② 确定性转换器（内置库知识）→ 目标库配置        │
+│ ② L1/L2 校验 → 返回 spec/变换计划（D13）      │
 └──────────────────┬───────────────────────────┘
                    ▼
 ┌──────────────────────────────────────────────┐
-│ chartbrain-sdk（TypeScript）                  │
-│ · 在消费端本地执行声明式变换计划（groupBy/      │
-│   aggregate/filter/sort…）                    │
-│ · 把结果数据绑定进图表配置                     │
+│ chartbrain-sdk（TypeScript）· 确定性步骤全在这│
+│ ① 本地执行声明式变换计划（groupBy/aggregate/   │
+│    filter/sort…）                             │
+│ ② 转换：中性 spec → 库配置                    │
+│    （Highcharts 自研 / ECharts 经 flint-js）  │
+│ ③ 数据绑定 → 交给自己的图表库渲染              │
 └──────────────────┬───────────────────────────┘
                    ▼
         消费端用自己的图表库渲染，呈现给用户
 ```
 
 - **「怎么算」**（变换逻辑）由 LLM 以声明式计划产出；
-- **「去算」**（变换执行）由 SDK 在消费端本地确定性执行，全量数据不出业务域；
+- **「去算」**（变换执行 + spec→库配置转换，D13）由 SDK 在消费端本地确定性执行，全量数据不出业务域；
 - **「怎么渲染」** 留在消费端自己的图表库，ChartBrain 不碰 UI。
 
 ## 设计原则（来自竞品调研沉淀）
 
 1. **LLM 只做「意图表达」，不碰数值计算，不产出代码/SQL/库配置** —— 只输出受约束的中性 spec。
-2. **中性 spec + 确定性转换器 = 库无关**：库知识是代码（转换器），不是让 LLM 背 schema。
+2. **中性 spec + 确定性转换器 = 库无关**：库知识是代码（转换器，随 SDK 在消费端执行，D13），不是让 LLM 背 schema。
 3. **spec 做窄**：可枚举的一律 enum、`additionalProperties: false`；字段引用必须命中真实列 schema。
 4. **三层校验 + 单轮修复**：L1 schema → L2 字段命中真实列 → L3 渲染冒烟；只允许一轮 validate→repair→revalidate。
 5. **权限在「执行期」强制，不在「提示词期」**；服务端只见 schema + 少量样例。
@@ -54,8 +56,8 @@ ChartBrain 把这些「图表智能」从业务服务里解耦出来，做成一
 
 | 组件 | 语言 | 职责 | 计划里程碑 |
 |---|---|---|---|
-| `server/`（chartbrain-server） | Python / FastAPI | API、LLM Provider 抽象、spec 生成与校验、确定性转换器 | M1 / M2 |
-| `sdk/`（@chartbrain/sdk） | TypeScript | 声明式变换执行、数据绑定 | M3 |
+| `server/`（chartbrain-server） | Python / FastAPI | API、LLM Provider 抽象、spec 生成 + L1/L2 校验（无状态，不产库配置，D13） | M1 / M2 |
+| `sdk/`（@chartbrain/sdk） | TypeScript | 变换执行 + 确定性转换（Highcharts 自研 / ECharts 经 flint-js，D12）+ 数据绑定 | M3 |
 | `examples/` | Node/TS | 消费端接入 demo（Highcharts / ECharts） | M4 |
 | `specs/` | JSON Schema | 中性 spec / 变换计划的契约定义 | M2 |
 
@@ -76,7 +78,7 @@ viz-ai/
 
 - **M1 骨架**：仓库结构、FastAPI 服务、LLM Provider 抽象（先接一个）、`POST /v1/charts`、中性 spec JSON Schema。
 - **M2 核心生成（Highcharts 先行）**：Prompt 工程产出中性 spec；**Highcharts 转换器**（柱/折/饼/散点/面积）+ L1/L2 校验。
-- **M3 SDK**：TS SDK 实现变换算子（groupBy / aggregate / filter / sort / limit…）+ Highcharts 数据绑定。
+- **M3 SDK**：TS SDK 实现变换算子执行 + Highcharts 转换器（D13）+ 数据绑定。
 - **M4 端到端**：Node 消费端 demo（Highcharts），自然语言 → 金融数据图表跑通。
 - **M5 双库化**：ECharts 后端（候选：SDK 内复用 flint-js `assembleECharts`，见 design.md D12）+ ECharts demo。
 - **M6 扩展**：更多图表类型、MCP 交付、自纠错回路、评测/回归管线（渲染比对）。
