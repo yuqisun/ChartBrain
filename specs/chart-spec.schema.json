@@ -1,0 +1,140 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://chartbrain.dev/specs/chart-spec.schema.json",
+  "title": "ChartBrain Neutral Chart Spec (v0.1)",
+  "description": "LLM 的输出契约、库无关的中间表示。约束：窄 schema、可枚举一律 enum、additionalProperties:false、字段只准引用「原始列或前序变换产出的列」。与 docs/design.md §4 对应。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "chart", "encodings"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "chart": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type"],
+      "properties": {
+        "type": {
+          "description": "受控图型白名单（MVP：先按 Highcharts 五种图型落地，D11）",
+          "enum": ["bar", "line", "pie", "scatter", "area"]
+        },
+        "title": { "type": "string", "maxLength": 200 }
+      }
+    },
+    "transform_plan": {
+      "description": "声明式变换计划。缺省 = 直接用原始数据（不过变换）。steps 顺序执行，前一步输出是后一步输入。",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["steps"],
+      "properties": {
+        "steps": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/step" },
+          "maxItems": 20
+        }
+      }
+    },
+    "encodings": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "x": { "$ref": "#/$defs/encoding" },
+        "y": { "$ref": "#/$defs/encoding" },
+        "series": { "$ref": "#/$defs/encoding" }
+      }
+    }
+  },
+  "$defs": {
+    "encoding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["field"],
+      "properties": {
+        "field": { "type": "string", "minLength": 1 },
+        "value_type": {
+          "description": "字段语义类型提示（帮助转换器与 SDK 处理轴/刻度；不含库方言）",
+          "enum": ["categorical", "numeric", "temporal"]
+        }
+      }
+    },
+    "step": {
+      "oneOf": [
+        { "$ref": "#/$defs/op_filter" },
+        { "$ref": "#/$defs/op_aggregate" },
+        { "$ref": "#/$defs/op_sort" },
+        { "$ref": "#/$defs/op_limit" }
+      ]
+    },
+    "scalar_or_list": {
+      "oneOf": [
+        { "type": ["number", "string", "boolean"] },
+        {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": ["number", "string"] }
+        }
+      ]
+    },
+    "op_filter": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["op", "field", "operator"],
+      "properties": {
+        "op": { "const": "filter" },
+        "field": { "type": "string", "minLength": 1 },
+        "operator": {
+          "enum": ["eq", "neq", "gt", "gte", "lt", "lte", "between", "in", "contains"]
+        },
+        "value": { "$ref": "#/$defs/scalar_or_list" },
+        "values": { "$ref": "#/$defs/scalar_or_list" }
+      }
+    },
+    "op_aggregate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["op", "measures"],
+      "properties": {
+        "op": { "const": "aggregate" },
+        "group_by": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "maxItems": 8
+        },
+        "measures": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "items": { "$ref": "#/$defs/measure" }
+        }
+      }
+    },
+    "measure": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["field", "agg", "as"],
+      "properties": {
+        "field": { "type": "string", "minLength": 1 },
+        "agg": { "enum": ["sum", "avg", "count", "countDistinct", "min", "max"] },
+        "as": { "type": "string", "minLength": 1, "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" }
+      }
+    },
+    "op_sort": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["op", "by"],
+      "properties": {
+        "op": { "const": "sort" },
+        "by": { "type": "string", "minLength": 1 },
+        "order": { "enum": ["asc", "desc"], "default": "asc" }
+      }
+    },
+    "op_limit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["op", "n"],
+      "properties": {
+        "op": { "const": "limit" },
+        "n": { "type": "integer", "minimum": 1, "maximum": 100000 }
+      }
+    }
+  }
+}
