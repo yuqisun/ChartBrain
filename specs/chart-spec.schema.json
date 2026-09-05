@@ -108,9 +108,10 @@
       }
     },
     "measure": {
+      "description": "field 可省略，仅当 agg=count 时（此时统计行数）；其余聚合需引用当前表存在的列。",
       "type": "object",
       "additionalProperties": false,
-      "required": ["field", "agg", "as"],
+      "required": ["agg", "as"],
       "properties": {
         "field": { "type": "string", "minLength": 1 },
         "agg": { "enum": ["sum", "avg", "count", "countDistinct", "min", "max"] },

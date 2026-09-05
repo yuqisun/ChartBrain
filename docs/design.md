@@ -256,7 +256,7 @@
 | 里程碑 | 交付物 | 验收标准 |
 |---|---|---|
 | M1 骨架 ✅（2026-09-05）| 仓库结构、FastAPI 服务、Provider 抽象（mock/openai-compat）、`POST /v1/charts` 占位、spec JSON Schema v0.1 | `uvicorn` 起服务 + pytest 12 passed + curl 通 |
-| M2 核心生成（Highcharts 先行，D11） | Prompt 产出中性 spec + 变换计划；L1/L2 校验；**Highcharts 转换器**（bar/line/pie/scatter/area） | 固定数据集的 NL→配置正确率基线 |
+| M2 核心生成（Highcharts 先行，D11） | Prompt 产出中性 spec + 变换计划；结构化输出 + L1/L2 校验 + 单轮修复；**spec 质量基线**（转换器随 SDK 在 M3，D13） | 固定数据集 NL→spec 的 L1/L2 通过率基线 |
 | M3 SDK | TS SDK：变换算子闭集执行 + **Highcharts** 数据绑定；与 spec schema 共享类型 | 单元测试覆盖每个算子 |
 | M4 端到端 | Node 消费端 demo（金融数据，**Highcharts**） | 自然语言跑通「问 → 图」 |
 | M5 双库化 | **ECharts 后端（候选：SDK 内调 flint-js `assembleECharts`，数据预聚合后喂入，D12）** + ECharts demo | 同一 spec 双库输出一致 |

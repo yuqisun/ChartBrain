@@ -1,15 +1,20 @@
-"""HTTP 路由：/health 与 POST /v1/charts（M1 占位）。
+"""HTTP 路由：/health 与 POST /v1/charts（M2：LLM → 中性 spec → L1/L2 → 返回）。
 
-M1 目标：骨架可起、curl 通、请求模型校验生效。spec 生成管线在 M2 接入。
+Provider 由配置决定：默认 mock（测试/无 key）；.env 设 CHARTBRAIN_LLM_PROVIDER=openai-compatible
+后走真实 LLM（如 DeepSeek）。
 """
 
 from __future__ import annotations
+
+import uuid
 
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 
 from .. import __version__
-from ..models import ChartRequest
+from ..llm import get_provider
+from ..models import ChartRequest, ChartResponse
+from ..spec.generator import generate_spec
 
 router = APIRouter()
 
@@ -19,19 +24,24 @@ def health() -> dict[str, str]:
     return {"status": "ok", "service": "chartbrain-server", "version": __version__}
 
 
-@router.post("/v1/charts")
-async def create_chart(req: ChartRequest) -> JSONResponse:
-    # M1：请求模型校验已由 FastAPI 完成（非法请求自动 422）。
-    # spec 生成管线（LLM -> 中性 spec + transform_plan -> L1/L2 校验）在 M2 实现。
-    return JSONResponse(
-        status_code=501,
-        content={
-            "detail": "spec 生成管线尚未实现（M2）；请求模型校验已通过",
-            "received": {
-                "query": req.query,
-                "library": req.library,
-                "columns": [c.name for c in req.columns],
-                "data_sample_rows": len(req.data_sample),
+@router.post("/v1/charts", response_model=ChartResponse)
+async def create_chart(req: ChartRequest) -> ChartResponse | JSONResponse:
+    provider = get_provider()
+    result = await generate_spec(req, provider)
+    if result.errors:
+        # L1/L2 校验失败（已耗尽单轮修复）或模型主动要求澄清
+        return JSONResponse(
+            status_code=422,
+            content={
+                "detail": "spec 生成未通过校验（L1/L2）或需澄清",
+                "errors": result.errors,
+                "repair_rounds": result.repair_rounds,
             },
-        },
+        )
+    request_id = "cb_" + uuid.uuid4().hex[:16]
+    return ChartResponse(
+        request_id=request_id,
+        library=req.library,
+        chart_spec=result.spec or {},
+        warnings=result.warnings,
     )
