@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class Column(BaseModel):
@@ -33,6 +33,13 @@ class ChartRequest(BaseModel):
         description="≤N 行真实样例（可脱敏），帮助 LLM 理解取值分布；默认不含样例",
     )
     constraints: Constraints | None = None
+
+    @field_validator("query")
+    @classmethod
+    def _query_not_blank(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("query 不能为空或纯空白")
+        return v
 
 
 class ChartResponse(BaseModel):
