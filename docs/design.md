@@ -41,6 +41,7 @@
 | D9 | 校验策略 | spec 做窄 + 三层校验（L1/L2/L3）+ 单轮修复 |
 | D10 | 交付形态（远期） | 提供 REST 与 MCP 两种消费通道 |
 | D11 | 落地顺序 | **首版单库落地 Highcharts**（转换器先行实现），ECharts 作为后续里程碑（M5）；D5 中性 spec 保持库无关，Highcharts 方言只进转换器 |
+| D12 | Flint 定位（Spike 结论，2026-09，读源码验证） | 微软 Flint（MIT，0.5.x，TS 库）**不作服务端引擎**：汇编要求 `data.values` 在场（`core/types.ts`），且 flint-py 未发布、仅 Vega-Lite 后端。**可作消费端 SDK 内的汇编引擎**：M5 的 ECharts 后端候选 = SDK 内调 flint-js `assembleECharts`（数据先由我们的变换运行时预聚合再喂入，Flint 对预聚合表不做重复聚合，`vegalite/assemble.ts` 已注明）。Highcharts 无后端（现有：VL/ECharts/Chart.js/Plotly/Excel）→ 转换器自研（D11）。声明式 filter / min / max / median 等超出 Flint 输入面（encoding 级 aggregate 仅 count/sum/average/mean）→ 变换 DSL 自研 |
 
 ---
 
@@ -244,9 +245,10 @@
 | AntV npm 供应链投毒（GMS-2026-75）、包名重名 | 锁版本 + 镜像 + 审计；注册自有 npm 命名空间 |
 | 竞品同名/改名（chartgpt、daVinci-LLM） | 监控以 repo URL + commit 时间为准 |
 
-### 8.3 竞品跟踪
+### 8.3 竞品跟踪（Flint 定位已由 D12 决定）
 
-- **Microsoft Flint**（`microsoft/flint-chart`）是本项目最近的参照与潜在竞品：0.x 生态未固化，是互操作窗口期；评估「接受 Flint spec 作为输入方言之一」作为远期选项（D10 讨论项）。
+- **Microsoft Flint**（`microsoft/flint-chart`，MIT，0.5.x，月更）是本项目最近的参照与潜在竞品。D12 已定：不作服务端引擎；**作为消费端 SDK 内的可选汇编引擎**（M5 ECharts 后端候选，顺带获得其语义/主题/布局能力）；「接受 Flint input 作为 ChartBrain spec 的兼容输入方言」保留为远期互操作方向。
+- 推论（待确认，涉及转换器运行位置）：D12 使 ECharts 汇编落在 SDK 内（需要本地数据），为保持 Highcharts/ECharts 双库对称，Highcharts 转换器同样随 SDK 发布并执行更一致——server 只负责 LLM + 校验 + 返回 spec/变换计划，所有确定性步骤（变换 + 转换 + 绑定）在消费端 SDK 完成。
 
 ---
 
@@ -258,7 +260,7 @@
 | M2 核心生成（Highcharts 先行，D11） | Prompt 产出中性 spec + 变换计划；L1/L2 校验；**Highcharts 转换器**（bar/line/pie/scatter/area） | 固定数据集的 NL→配置正确率基线 |
 | M3 SDK | TS SDK：变换算子闭集执行 + **Highcharts** 数据绑定；与 spec schema 共享类型 | 单元测试覆盖每个算子 |
 | M4 端到端 | Node 消费端 demo（金融数据，**Highcharts**） | 自然语言跑通「问 → 图」 |
-| M5 双库化 | **ECharts 转换器**（同一中性 spec）+ ECharts demo | 同一 spec 双库输出一致 |
+| M5 双库化 | **ECharts 后端（候选：SDK 内调 flint-js `assembleECharts`，数据预聚合后喂入，D12）** + ECharts demo | 同一 spec 双库输出一致 |
 | M6 扩展 | 更多图型、MCP 交付、自纠错回路、渲染比对回归评测 | 回归管线可跑 |
 
 ---

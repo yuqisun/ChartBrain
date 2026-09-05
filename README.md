@@ -78,7 +78,7 @@ viz-ai/
 - **M2 核心生成（Highcharts 先行）**：Prompt 工程产出中性 spec；**Highcharts 转换器**（柱/折/饼/散点/面积）+ L1/L2 校验。
 - **M3 SDK**：TS SDK 实现变换算子（groupBy / aggregate / filter / sort / limit…）+ Highcharts 数据绑定。
 - **M4 端到端**：Node 消费端 demo（Highcharts），自然语言 → 金融数据图表跑通。
-- **M5 双库化**：ECharts 转换器（同一中性 spec）+ ECharts demo。
+- **M5 双库化**：ECharts 后端（候选：SDK 内复用 flint-js `assembleECharts`，见 design.md D12）+ ECharts demo。
 - **M6 扩展**：更多图表类型、MCP 交付、自纠错回路、评测/回归管线（渲染比对）。
 
 ## 竞品定位（一句话）
