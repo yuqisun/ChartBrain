@@ -75,10 +75,11 @@ viz-ai/
 ## 路线图
 
 - **M1 骨架**：仓库结构、FastAPI 服务、LLM Provider 抽象（先接一个）、`POST /v1/charts`、中性 spec JSON Schema。
-- **M2 核心生成**：Prompt 工程产出中性 spec；Highcharts + ECharts 转换器（柱/折/饼/散点/面积）。
-- **M3 SDK**：TS SDK 实现变换算子（groupBy / aggregate / filter / sort / limit…）+ 数据绑定。
-- **M4 端到端**：Node 消费端 demo，自然语言 → 金融数据图表跑通。
-- **M5 扩展**：更多图表类型、MCP 交付、自纠错回路、评测/回归管线（渲染比对）。
+- **M2 核心生成（Highcharts 先行）**：Prompt 工程产出中性 spec；**Highcharts 转换器**（柱/折/饼/散点/面积）+ L1/L2 校验。
+- **M3 SDK**：TS SDK 实现变换算子（groupBy / aggregate / filter / sort / limit…）+ Highcharts 数据绑定。
+- **M4 端到端**：Node 消费端 demo（Highcharts），自然语言 → 金融数据图表跑通。
+- **M5 双库化**：ECharts 转换器（同一中性 spec）+ ECharts demo。
+- **M6 扩展**：更多图表类型、MCP 交付、自纠错回路、评测/回归管线（渲染比对）。
 
 ## 竞品定位（一句话）
 

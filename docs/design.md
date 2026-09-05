@@ -40,6 +40,7 @@
 | D8 | 数据与隐私 | 服务端只见列 schema + 少量样例；全量数据只在消费端 |
 | D9 | 校验策略 | spec 做窄 + 三层校验（L1/L2/L3）+ 单轮修复 |
 | D10 | 交付形态（远期） | 提供 REST 与 MCP 两种消费通道 |
+| D11 | 落地顺序 | **首版单库落地 Highcharts**（转换器先行实现），ECharts 作为后续里程碑（M5）；D5 中性 spec 保持库无关，Highcharts 方言只进转换器 |
 
 ---
 
@@ -110,7 +111,7 @@
 {
   "schema_version": 1,
   "chart": {
-    "type": "line",          // enum 白名单：bar|line|pie|scatter|area（MVP）
+    "type": "line",          // enum 白名单：bar|line|pie|scatter|area（MVP，先按 Highcharts 五种图型落地，D11）
     "title": "月度营收趋势"    // 可选
   },
   "transform_plan": {        // 可选；缺省 = 直接用原始数据（不过变换）
@@ -254,10 +255,11 @@
 | 里程碑 | 交付物 | 验收标准 |
 |---|---|---|
 | M1 骨架 | 仓库结构、FastAPI 服务、Provider 抽象（先接一个）、`POST /v1/charts` 空实现、spec JSON Schema | `uvicorn` 起服务，curl 通 |
-| M2 核心生成 | Prompt 产出中性 spec + 变换计划；L1/L2 校验；Highcharts/ECharts 转换器（bar/line/pie/scatter/area） | 固定数据集的 NL→配置正确率基线 |
-| M3 SDK | TS SDK：变换算子闭集执行 + 数据绑定；与 spec schema 共享类型 | 单元测试覆盖每个算子 |
-| M4 端到端 | Node 消费端 demo（金融数据，Highcharts + ECharts 各一） | 自然语言跑通「问 → 图」 |
-| M5 扩展 | 更多图型、MCP 交付、自纠错回路、渲染比对回归评测 | 回归管线可跑 |
+| M2 核心生成（Highcharts 先行，D11） | Prompt 产出中性 spec + 变换计划；L1/L2 校验；**Highcharts 转换器**（bar/line/pie/scatter/area） | 固定数据集的 NL→配置正确率基线 |
+| M3 SDK | TS SDK：变换算子闭集执行 + **Highcharts** 数据绑定；与 spec schema 共享类型 | 单元测试覆盖每个算子 |
+| M4 端到端 | Node 消费端 demo（金融数据，**Highcharts**） | 自然语言跑通「问 → 图」 |
+| M5 双库化 | **ECharts 转换器**（同一中性 spec）+ ECharts demo | 同一 spec 双库输出一致 |
+| M6 扩展 | 更多图型、MCP 交付、自纠错回路、渲染比对回归评测 | 回归管线可跑 |
 
 ---
 
