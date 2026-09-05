@@ -255,7 +255,7 @@
 
 | 里程碑 | 交付物 | 验收标准 |
 |---|---|---|
-| M1 骨架 | 仓库结构、FastAPI 服务、Provider 抽象（先接一个）、`POST /v1/charts` 空实现、spec JSON Schema | `uvicorn` 起服务，curl 通 |
+| M1 骨架 ✅（2026-09-05）| 仓库结构、FastAPI 服务、Provider 抽象（mock/openai-compat）、`POST /v1/charts` 占位、spec JSON Schema v0.1 | `uvicorn` 起服务 + pytest 12 passed + curl 通 |
 | M2 核心生成（Highcharts 先行，D11） | Prompt 产出中性 spec + 变换计划；L1/L2 校验；**Highcharts 转换器**（bar/line/pie/scatter/area） | 固定数据集的 NL→配置正确率基线 |
 | M3 SDK | TS SDK：变换算子闭集执行 + **Highcharts** 数据绑定；与 spec schema 共享类型 | 单元测试覆盖每个算子 |
 | M4 端到端 | Node 消费端 demo（金融数据，**Highcharts**） | 自然语言跑通「问 → 图」 |
