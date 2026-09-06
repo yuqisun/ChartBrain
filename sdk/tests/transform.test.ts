@@ -36,9 +36,9 @@ describe("filter", () => {
 
   it("contains 字符串包含", () => {
     const rows = executeTransform(sales, [
-      { op: "filter", field: "month", operator: "contains", value: "02" },
+      { op: "filter", field: "month", operator: "contains", value: "-02" },
     ]);
-    expect(rows).toHaveLength(2);
+    expect(rows.map((r) => r.month)).toEqual(["2026-02", "2026-02"]);
   });
 });
 
