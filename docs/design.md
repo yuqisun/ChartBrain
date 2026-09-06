@@ -258,7 +258,7 @@
 | M1 骨架 ✅（2026-09-05）| 仓库结构、FastAPI 服务、Provider 抽象（mock/openai-compat）、`POST /v1/charts` 占位、spec JSON Schema v0.1 | `uvicorn` 起服务 + pytest 12 passed + curl 通 |
 | M2 核心生成 ✅（2026-09-05）| Prompt 产出中性 spec + 变换计划；结构化输出 + L1/L2 校验 + 单轮修复；spec 质量基线（转换器随 SDK 在 M3，D13） | DeepSeek 实测基线：可表达用例 8/8、边界用例诚实拒绝 2/2 |
 | M3 SDK ✅（2026-09-05）| @chartbrain/sdk：变换算子闭集执行 + **Highcharts 转换器**（随 SDK 发布执行，D13）；与 spec schema 共享类型 | typecheck + build 通过、vitest 17 passed |
-| M4 端到端 | Node 消费端 demo（金融数据，**Highcharts**） | 自然语言跑通「问 → 图」 |
+| M4 端到端 ✅（2026-09-05）| Node 消费端 demo（金融数据 48 行，**Highcharts**，`examples/highcharts-demo`） | 自然语言跑通「问 → 图」：bar/area 两种问题均出图 |
 | M5 双库化 | **ECharts 后端（候选：SDK 内调 flint-js `assembleECharts`，数据预聚合后喂入，D12）** + ECharts demo | 同一 spec 双库输出一致 |
 | M6 扩展 | 更多图型、MCP 交付、自纠错回路、渲染比对回归评测 | 回归管线可跑 |
 
