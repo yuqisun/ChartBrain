@@ -7,7 +7,7 @@
  * MVP 覆盖：bar/line/pie/scatter/area，x 为分类轴（bar/line/area）、可选 series 分组。
  */
 
-import type { ChartSpec, EncodingSpec, Row } from "../types";
+import type { ChartSpec, EncodingSpec, Row } from "../types.js";
 
 export interface HighchartsSeries {
   name: string;

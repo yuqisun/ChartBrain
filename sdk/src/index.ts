@@ -5,14 +5,14 @@
  * MVP 只提供 Highcharts 后端（D11）；ECharts 后端经 flint-js（M5，D12）。
  */
 
-import { toHighcharts } from "./converter/highcharts";
-import type { HighchartsOption } from "./converter/highcharts";
-import { executeTransform } from "./transform";
+import { toHighcharts } from "./converter/highcharts.js";
+import type { HighchartsOption } from "./converter/highcharts.js";
+import { executeTransform } from "./transform.js";
 
-export { executeTransform } from "./transform";
-export { toHighcharts } from "./converter/highcharts";
-export type { HighchartsOption, HighchartsSeries } from "./converter/highcharts";
-export type * from "./types";
+export { executeTransform } from "./transform.js";
+export { toHighcharts } from "./converter/highcharts.js";
+export type { HighchartsOption, HighchartsSeries } from "./converter/highcharts.js";
+export type * from "./types.js";
 
 /**
  * 一站式入口：执行变换（如有）→ 转换出 Highcharts 配置。

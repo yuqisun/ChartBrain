@@ -13,7 +13,7 @@ import type {
   Scalar,
   SortStep,
   TransformStep,
-} from "./types";
+} from "./types.js";
 
 const GROUP_SEP = "\u0000";
 
