@@ -17,6 +17,11 @@ from ..models import ChartRequest
 
 _NUMERIC_AGGS = {"sum", "avg", "min", "max"}
 _NUMERIC_OUTPUT_AGGS = _NUMERIC_AGGS | {"count", "countDistinct"}
+_ALLOWED_AGGS = _NUMERIC_OUTPUT_AGGS
+_ALLOWED_FILTER_OPS = {
+    "eq", "neq", "gt", "gte", "lt", "lte", "between", "in", "contains",
+}
+_KNOWN_OPS = {"filter", "aggregate", "sort", "limit"}
 
 
 def validate_l2(spec: dict, req: ChartRequest) -> list[str]:
@@ -51,45 +56,79 @@ def validate_l2(spec: dict, req: ChartRequest) -> list[str]:
     for i, step in enumerate(steps):
         op = step.get("op")
         where = f"transform_plan.steps[{i}]({op})"
+        if op not in _KNOWN_OPS:
+            errors.append(f"L2: {where}: 未知算子 '{op}'（允许: {sorted(_KNOWN_OPS)}）")
+            continue
         if op == "filter":
             f = step.get("field")
+            operator = step.get("operator")
+            if not isinstance(f, str) or not f:
+                errors.append(f"L2: {where}: 缺少 field")
+            if operator not in _ALLOWED_FILTER_OPS:
+                errors.append(
+                    f"L2: {where}: operator '{operator}' 非法（允许: {sorted(_ALLOWED_FILTER_OPS)}）"
+                )
             if isinstance(f, str):
                 check_field(f, where)
         elif op == "aggregate":
             group_by = step.get("group_by") or []
+            measures = step.get("measures")
+            if not isinstance(measures, list) or not measures:
+                errors.append(f"L2: {where}: 缺少 measures（至少 1 项）")
+                measures = []
             for g in group_by:
                 if isinstance(g, str):
                     check_field(g, where)
+                else:
+                    errors.append(f"L2: {where}: group_by 元素必须是列名字符串")
             new_typed: dict[str, str] = {g: typed[g] for g in group_by if g in typed}
-            for m in step.get("measures") or []:
-                field = m.get("field")
-                agg = m.get("agg")
-                as_name = m.get("as")
+            for m in measures:
+                field = m.get("field") if isinstance(m, dict) else None
+                agg = m.get("agg") if isinstance(m, dict) else None
+                as_name = m.get("as") if isinstance(m, dict) else None
+                if agg not in _ALLOWED_AGGS:
+                    errors.append(
+                        f"L2: {where}/measures: 聚合 '{agg}' 非法"
+                        f"（允许: {sorted(_ALLOWED_AGGS)}）"
+                    )
+                if not isinstance(as_name, str) or not as_name:
+                    errors.append(f"L2: {where}/measures: 缺少 as（输出列名）")
                 if allowed_aggs is not None and agg not in allowed_aggs:
                     errors.append(
                         f"L2: {where}/measures: 聚合 '{agg}' 不在 allowed_aggs 白名单内"
                     )
                 if field:
-                    if check_field(field, where + "/measures"):
-                        if agg in _NUMERIC_AGGS and typed.get(field) != "number":
-                            errors.append(
-                                f"L2: {where}/measures: 数值聚合 {agg} 用于非 number 列 "
-                                f"'{field}'（类型: {typed.get(field)}）"
-                            )
+                    check_field(field, where + "/measures")
+                    if (
+                        agg in _NUMERIC_AGGS
+                        and field in typed
+                        and typed.get(field) != "number"
+                    ):
+                        errors.append(
+                            f"L2: {where}/measures: 数值聚合 {agg} 用于非 number 列 "
+                            f"'{field}'（类型: {typed.get(field)}）"
+                        )
                 elif agg != "count":
                     errors.append(
                         f"L2: {where}/measures: 缺少 field（仅 agg=count 可省略）"
                     )
-                if as_name:
+                if isinstance(as_name, str) and as_name:
                     # 聚合产出一律为数值列（当前算子闭集内）
                     new_typed[as_name] = "number"
             typed = new_typed
         elif op == "sort":
             by = step.get("by")
-            if isinstance(by, str):
+            if not isinstance(by, str) or not by:
+                errors.append(f"L2: {where}: 缺少 by（排序字段）")
+            else:
                 check_field(by, where)
+            order = step.get("order", "asc")
+            if order not in ("asc", "desc"):
+                errors.append(f"L2: {where}: order '{order}' 非法（允许: asc|desc）")
         elif op == "limit":
-            pass
+            n = step.get("n")
+            if not isinstance(n, int) or isinstance(n, bool) or n < 1:
+                errors.append(f"L2: {where}: n 必须是正整数")
 
     # encodings 引用最终表
     for ch, encv in (spec.get("encodings") or {}).items():

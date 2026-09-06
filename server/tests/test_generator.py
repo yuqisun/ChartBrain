@@ -204,3 +204,96 @@ def test_l2_reaggregate_previous_output_no_false_positive() -> None:
         },
     }
     assert validate_l2(spec, req) == []
+
+
+# ---------- L2 结构必填项（防御性，不依赖 L1） ----------
+
+
+def _req_rr() -> ChartRequest:
+    return _req(
+        [
+            {"name": "region", "type": "string"},
+            {"name": "revenue", "type": "number"},
+        ]
+    )
+
+
+def test_l2_sort_missing_by_rejected() -> None:
+    req = _req_rr()
+    spec = {
+        "schema_version": 1,
+        "chart": {"type": "bar"},
+        "transform_plan": {
+            "steps": [
+                {
+                    "op": "aggregate",
+                    "group_by": ["region"],
+                    "measures": [
+                        {"field": "revenue", "agg": "sum", "as": "region_revenue"}
+                    ],
+                },
+                {"op": "sort", "order": "desc"},  # 缺 by —— demo 中真实出现过的漏网案例
+            ]
+        },
+        "encodings": {
+            "x": {"field": "region", "value_type": "categorical"},
+            "y": {"field": "region_revenue", "value_type": "numeric"},
+        },
+    }
+    errors = validate_l2(spec, req)
+    assert any("缺少 by" in e for e in errors)
+
+
+def test_l2_filter_missing_field_rejected() -> None:
+    req = _req_rr()
+    spec = {
+        "schema_version": 1,
+        "chart": {"type": "bar"},
+        "transform_plan": {
+            "steps": [{"op": "filter", "operator": "gt", "value": 1000}]
+        },
+        "encodings": {
+            "x": {"field": "region", "value_type": "categorical"},
+            "y": {"field": "revenue", "value_type": "numeric"},
+        },
+    }
+    errors = validate_l2(spec, req)
+    assert any("缺少 field" in e for e in errors)
+
+
+def test_l2_measure_missing_as_rejected() -> None:
+    req = _req_rr()
+    spec = {
+        "schema_version": 1,
+        "chart": {"type": "bar"},
+        "transform_plan": {
+            "steps": [
+                {
+                    "op": "aggregate",
+                    "group_by": ["region"],
+                    "measures": [{"field": "revenue", "agg": "sum"}],  # 缺 as
+                }
+            ]
+        },
+        "encodings": {
+            "x": {"field": "region", "value_type": "categorical"},
+            "y": {"field": "region_revenue", "value_type": "numeric"},
+        },
+    }
+    errors = validate_l2(spec, req)
+    assert any("缺少 as" in e for e in errors)
+
+
+def test_l2_unknown_op_rejected() -> None:
+    req = _req_rr()
+    spec = {
+        "schema_version": 1,
+        "chart": {"type": "bar"},
+        "transform_plan": {"steps": [{"op": "pivot"}]},
+        "encodings": {
+            "x": {"field": "region", "value_type": "categorical"},
+            "y": {"field": "revenue", "value_type": "numeric"},
+        },
+    }
+    errors = validate_l2(spec, req)
+    assert any("未知算子" in e for e in errors)
