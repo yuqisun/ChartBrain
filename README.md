@@ -135,6 +135,13 @@ viz-ai/
 声明式数据变换 + 消费端 SDK 执行」的完整组合目前是行业空位**（见调研报告）。Flint 已被吸收为
 ECharts 后端的编译引擎（D12）。
 
+## 文档
+
+- [docs/INTEGRATION.md](docs/INTEGRATION.md) —— Highcharts 消费端接入指南（完整步骤 + 代码）
+- [docs/design.md](docs/design.md) —— 完整设计（决策记录 D1–D13、spec 草案、路线图）
+- `ChartBrain_调研汇总报告.md` —— 调研结论总览
+- `research/` —— 各主题详细调研与来源 URL
+
 ## 许可
 
 [MIT](LICENSE) © 2026 Yuqi Sun
