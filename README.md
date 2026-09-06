@@ -81,7 +81,7 @@ viz-ai/
 - **M3 SDK ✅（2026-09-05）**：`@chartbrain/sdk` 变换算子执行 + Highcharts 转换器（D13）+ 数据绑定；typecheck/build 通过，vitest 17 passed。
 - **M4 端到端 ✅（2026-09-05）**：`examples/highcharts-demo` 消费端 demo（48 行金融数据）——自然语言 → DeepSeek spec → SDK 变换/转换 → Highcharts 出图（bar/area 实测通过）。
 - **M4b 工程质量 ✅（2026-09-05）**：GitHub Actions CI（server pytest / sdk typecheck+build+vitest）；LLM 超时/重试/错误分类（Provider 故障→503）+ 请求审计日志。
-- **M5 双库化 ✅（2026-09-05，option 层）**：ECharts 后端 = SDK 内复用 flint-js `assembleECharts`（D12 已验证）；同一 spec → Highcharts/ECharts 双 option，5 图型测试通过（浏览器渲染 demo 待补）。
+- **M5 双库化 ✅（2026-09-05）**：ECharts 后端 = SDK 内复用 flint-js `assembleECharts`；同一 spec → Highcharts / ECharts **双库并排渲染一致**（`examples/dual-demo` 实测 bar/area）。
 - **M6 扩展**：更多图表类型、MCP 交付、自纠错回路、评测/回归管线（渲染比对）。
 
 ## 竞品定位（一句话）
