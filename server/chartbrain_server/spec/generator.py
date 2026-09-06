@@ -29,6 +29,8 @@ class GenerationResult:
     errors: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
     repair_rounds: int = 0
+    # 错误类型：validation | clarification | provider（路由据此映射 422 / 422 / 503）
+    error_kind: str = "validation"
 
 
 def extract_json(text: str) -> dict:
@@ -51,7 +53,14 @@ async def generate_spec(req: ChartRequest, provider: BaseLLMProvider) -> Generat
     rounds = 0
 
     while True:
-        raw = await provider.complete(SYSTEM_PROMPT, user_prompt, json_mode=True)
+        try:
+            raw = await provider.complete(SYSTEM_PROMPT, user_prompt, json_mode=True)
+        except Exception as exc:  # noqa: BLE001 —— Provider 层故障（网络/认证/超时/5xx）
+            return GenerationResult(
+                errors=[f"LLM 调用失败（{type(exc).__name__}）: {exc}"],
+                error_kind="provider",
+                repair_rounds=rounds,
+            )
         try:
             obj = extract_json(raw)
         except (json.JSONDecodeError, ValueError) as exc:
@@ -65,7 +74,9 @@ async def generate_spec(req: ChartRequest, provider: BaseLLMProvider) -> Generat
         if isinstance(obj, dict) and obj.get("error"):
             # 模型主动澄清：歧义/缺字段，不硬答（red line）
             return GenerationResult(
-                errors=[f"澄清请求: {obj['error']}"], repair_rounds=rounds
+                errors=[f"澄清请求: {obj['error']}"],
+                error_kind="clarification",
+                repair_rounds=rounds,
             )
         if not isinstance(obj, dict):
             feedback = "模型输出不是 JSON 对象"

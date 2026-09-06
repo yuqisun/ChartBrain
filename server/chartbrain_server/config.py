@@ -12,6 +12,20 @@ _ENV_FILE = Path(__file__).resolve().parents[1] / ".env"
 load_dotenv(_ENV_FILE)
 
 
+def _env_float(name: str, default: float) -> float:
+    try:
+        return float(os.getenv(name, default))
+    except (TypeError, ValueError):
+        return default
+
+
+def _env_int(name: str, default: int) -> int:
+    try:
+        return int(os.getenv(name, default))
+    except (TypeError, ValueError):
+        return default
+
+
 class Settings:
     """ChartBrain server 运行时配置。"""
 
@@ -24,6 +38,11 @@ class Settings:
             "OPENAI_BASE_URL", "https://api.deepseek.com/v1"
         )
         self.openai_model: str = os.getenv("CHARTBRAIN_OPENAI_MODEL", "deepseek-chat")
+        # LLM 调用韧性：超时（秒）与最大重试次数
+        self.llm_timeout_seconds: float = _env_float(
+            "CHARTBRAIN_LLM_TIMEOUT_SECONDS", 60.0
+        )
+        self.llm_max_retries: int = _env_int("CHARTBRAIN_LLM_MAX_RETRIES", 2)
         # specs 目录覆盖（默认取仓库根 specs/）
         self.specs_dir: str = os.getenv("CHARTBRAIN_SPECS_DIR", "")
 

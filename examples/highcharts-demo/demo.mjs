@@ -62,17 +62,23 @@ function writeHtml(query, option) {
 <meta charset="utf-8" />
 <title>ChartBrain Demo — ${escapeHtml(query)}</title>
 <script src="https://code.highcharts.com/highcharts.js"></script>
-<style>body{font-family:system-ui;margin:24px} #container{max-width:900px}</style>
+<script>if (!window.Highcharts) { document.write('<script src="./node_modules/highcharts/highcharts.js"><\\/script>'); }</script>
+<style>body{font-family:system-ui;margin:24px} #container{max-width:900px;min-height:480px}</style>
 </head>
 <body>
 <h2>${escapeHtml(query)}</h2>
 <p><small>ChartBrain 端到端 demo · spec → SDK 变换/转换 → Highcharts 渲染</small></p>
-<div id="container"></div>
+<div id="container"><p>加载中…</p></div>
 <script>
-  const option = ${json};
-  option.chart = { ...(option.chart || {}), renderTo: 'container' };
-  option.title = { text: option.title?.text ?? '' };
-  Highcharts.chart(option);
+  if (!window.Highcharts) {
+    document.getElementById('container').innerHTML =
+      '<p>❌ Highcharts 未能加载（CDN 不可达且本地未安装）。<br/>请运行 <code>npm i highcharts</code> 后重新 <code>node demo.mjs</code>。</p>';
+  } else {
+    const option = ${json};
+    option.chart = { ...(option.chart || {}), renderTo: 'container' };
+    option.title = { text: option.title?.text ?? '' };
+    Highcharts.chart(option);
+  }
 </script>
 </body>
 </html>`;

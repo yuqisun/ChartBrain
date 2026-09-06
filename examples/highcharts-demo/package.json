@@ -6,5 +6,8 @@
   "scripts": {
     "demo": "node demo.mjs",
     "demo:area": "node demo.mjs \"每月营收面积图\""
+  },
+  "dependencies": {
+    "highcharts": "^12.6.0"
   }
 }
