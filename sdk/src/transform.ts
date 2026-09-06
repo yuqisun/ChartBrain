@@ -122,11 +122,12 @@ function applyAggregate(rows: Row[], step: AggregateStep): Row[] {
         continue;
       }
       if (!m.field) continue; // 仅 count 可无 field（L2 已保证）
+      const field: string = m.field; // 提出为常量：TS 收窄不进入闭包
       if (m.agg === "countDistinct") {
-        out[m.as] = new Set(groupRows.map((r) => String(r[m.field] ?? ""))).size;
+        out[m.as] = new Set(groupRows.map((r) => String(r[field] ?? ""))).size;
         continue;
       }
-      const v = numericAgg(groupRows, m.field, m.agg);
+      const v = numericAgg(groupRows, field, m.agg);
       out[m.as] = Number.isNaN(v) ? null : v;
     }
     return out;
