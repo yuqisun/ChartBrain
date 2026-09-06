@@ -166,3 +166,41 @@ def test_l2_allowed_aggs_whitelist() -> None:
     spec = _l2_spec("region_revenue", agg="sum")
     errors = validate_l2(spec, req)
     assert any("allowed_aggs" in e for e in errors)
+
+
+def test_l2_reaggregate_previous_output_no_false_positive() -> None:
+    # 步骤 2 对步骤 1 产出的数值列 region_revenue 再聚合 sum：类型应追踪为 number，不误报
+    req = _req(
+        [
+            {"name": "month", "type": "string"},
+            {"name": "region", "type": "string"},
+            {"name": "revenue", "type": "number"},
+        ]
+    )
+    spec = {
+        "schema_version": 1,
+        "chart": {"type": "line"},
+        "transform_plan": {
+            "steps": [
+                {
+                    "op": "aggregate",
+                    "group_by": ["month", "region"],
+                    "measures": [
+                        {"field": "revenue", "agg": "sum", "as": "region_revenue"}
+                    ],
+                },
+                {
+                    "op": "aggregate",
+                    "group_by": ["month"],
+                    "measures": [
+                        {"field": "region_revenue", "agg": "sum", "as": "total_revenue"}
+                    ],
+                },
+            ]
+        },
+        "encodings": {
+            "x": {"field": "month", "value_type": "categorical"},
+            "y": {"field": "total_revenue", "value_type": "numeric"},
+        },
+    }
+    assert validate_l2(spec, req) == []

@@ -2,8 +2,8 @@
 
 设计要点（docs/design.md §7 红线）：
 - LLM 只出「受约束的中性 spec + 变换计划」，不写代码/SQL、不产库配置；
-- 字段只能引用 columns 原始列或变换 as 产出的列；
-- 歧义/字段不存在时要求输出 {"error": "..."}，禁止瞎猜。
+- 字段只能引用 columns 原始列或前序变换保留/产出的列（列生命周期）；
+- 超出 MVP 能力（占比/比率等表达式计算）→ 输出 {"error": ...}，禁止自创列名硬凑。
 """
 
 from __future__ import annotations
@@ -25,20 +25,27 @@ SYSTEM_PROMPT = """你是 ChartBrain 的图表意图解析器。把用户的自�
 
 硬性规则：
 1. chart.type 只能是：bar | line | pie | scatter | area 之一。
-2. 数据加工（分组、聚合、过滤、排序、截断）必须用 transform_plan.steps 声明式表达，
-   算子只允许：filter | aggregate | sort | limit。
-   - filter:   { "op":"filter", "field":"列", "operator":"eq|neq|gt|gte|lt|lte|between|in|contains", "value":..., "values":[...] }
-   - aggregate:{ "op":"aggregate", "group_by":["列",...], "measures":[{"field":"列","agg":"sum|avg|count|countDistinct|min|max","as":"新列名"}] }
-   - sort:     { "op":"sort", "by":"列", "order":"asc|desc" }
-   - limit:    { "op":"limit", "n":整数 }
+2. 数据加工必须用 transform_plan.steps 声明式表达，算子只允许：
+   filter | aggregate | sort | limit，steps 最多 3 步。
+   - filter:    { "op":"filter", "field":"列", "operator":"eq|neq|gt|gte|lt|lte|between|in|contains", "value":..., "values":[...] }
+   - aggregate: { "op":"aggregate", "group_by":["列",...], "measures":[{"field":"列","agg":"sum|avg|count|countDistinct|min|max","as":"新列名"}] }
+   - sort:      { "op":"sort", "by":"列", "order":"asc|desc" }
+   - limit:     { "op":"limit", "n":整数 }
    aggregate 中 agg=count 时可省略 field（统计行数）。
-3. 字段引用规则：
-   - transform 的输入字段必须是 columns 里的原始列名；
-   - aggregate 用 "as" 产出新列；encodings 引用「变换后仍存在的列名」（无变换则直接引用原始列名）。
-4. sum/avg/min/max 只能用于 number 类型列。
-5. 绝不输出任何图表库配置（Highcharts/ECharts）、不写代码、不写 SQL。
-6. 如果请求里没有对应字段、或信息不足无法确定图型/轴，就输出 {"error":"说明原因"}，禁止猜测。
-7. 若上下文 constraints.allowed_fields 非空，所有引用字段必须属于它；
+3. 列生命周期（最重要，违反必失败）：
+   - 第 1 步的输入是 columns 里的原始列；
+   - aggregate 执行后，表格只保留 group_by 列 + 各 measures 的 as 列，其余原始列被丢弃，
+     后续步骤/encodings 不能再引用被丢弃的列；
+   - measures[].field 必须引用「当前步骤开始时仍存在的列」；不要在一步内引用本步稍后
+     才产出的 as 列；
+   - 若需要「对已聚合出的数值列再聚合」，必须先通过 group_by 保留它（或它是上一步的 as 列）。
+4. sum/avg/min/max 只用于 number 类型列；count/countDistinct 可用于任意列。
+5. 能力边界：当前只支持上表算子与聚合函数。若诉求需要「占比/百分比/环比/同比/比率/方差/
+   差值等表达式计算」或任何上面的规则表达不了的分析，直接输出 {"error":"说明不支持的原因"}，
+   绝不自行发明列名或硬凑一个错误 spec。
+6. 如果请求里没有对应字段、或信息不足无法确定图型/轴，同样输出 {"error":"说明原因"}，禁止猜测。
+7. 绝不输出任何图表库配置（Highcharts/ECharts）、不写代码、不写 SQL。
+8. 若上下文 constraints.allowed_fields 非空，所有引用字段必须属于它；
    若 constraints.allowed_aggs 非空，agg 必须属于它。
 """
 
@@ -73,7 +80,11 @@ def build_user_prompt(req: ChartRequest) -> str:
                                 "op": "aggregate",
                                 "group_by": ["region"],
                                 "measures": [
-                                    {"field": "revenue", "agg": "sum", "as": "region_revenue"}
+                                    {
+                                        "field": "revenue",
+                                        "agg": "sum",
+                                        "as": "region_revenue",
+                                    }
                                 ],
                             },
                             {"op": "sort", "by": "region_revenue", "order": "desc"},
@@ -100,7 +111,11 @@ def build_user_prompt(req: ChartRequest) -> str:
                                 "op": "aggregate",
                                 "group_by": ["month"],
                                 "measures": [
-                                    {"field": "revenue", "agg": "sum", "as": "monthly_revenue"}
+                                    {
+                                        "field": "revenue",
+                                        "agg": "sum",
+                                        "as": "monthly_revenue",
+                                    }
                                 ],
                             },
                             {"op": "sort", "by": "month", "order": "asc"},
