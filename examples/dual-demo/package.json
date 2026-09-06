@@ -1,0 +1,14 @@
+{
+  "name": "chartbrain-dual-demo",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "demo": "node demo.mjs",
+    "demo:area": "node demo.mjs \"每月营收面积图\""
+  },
+  "dependencies": {
+    "echarts": "^5.5.0",
+    "highcharts": "^12.0.0"
+  }
+}
