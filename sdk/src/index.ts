@@ -7,10 +7,12 @@
 
 import { toHighcharts } from "./converter/highcharts.js";
 import type { HighchartsOption } from "./converter/highcharts.js";
+import { toECharts } from "./converter/echarts.js";
 import { executeTransform } from "./transform.js";
 
 export { executeTransform } from "./transform.js";
 export { toHighcharts } from "./converter/highcharts.js";
+export { toECharts } from "./converter/echarts.js";
 export type { HighchartsOption, HighchartsSeries } from "./converter/highcharts.js";
 export type * from "./types.js";
 
@@ -24,4 +26,13 @@ export function buildHighcharts(data: Record<string, unknown>[], spec: Parameter
   const steps = spec.transform_plan?.steps;
   const rows = steps && steps.length > 0 ? executeTransform(data, steps) : data;
   return toHighcharts(rows, spec);
+}
+
+/**
+ * 一站式入口（ECharts 后端，D12）：执行变换（如有）→ 交给 flint-js 编译出 ECharts option。
+ */
+export function buildECharts(data: Record<string, unknown>[], spec: Parameters<typeof toECharts>[1]): unknown {
+  const steps = spec.transform_plan?.steps;
+  const rows = steps && steps.length > 0 ? executeTransform(data, steps) : data;
+  return toECharts(rows, spec);
 }

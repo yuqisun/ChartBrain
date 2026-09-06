@@ -17,6 +17,9 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run"
   },
+  "dependencies": {
+    "flint-chart": "^0.5.1"
+  },
   "devDependencies": {
     "typescript": "^5.5.0",
     "vitest": "^2.1.0"
