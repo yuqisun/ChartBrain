@@ -121,11 +121,11 @@ function applyAggregate(rows: Row[], step: AggregateStep): Row[] {
         out[m.as] = groupRows.length;
         continue;
       }
+      if (!m.field) continue; // 仅 count 可无 field（L2 已保证）
       if (m.agg === "countDistinct") {
         out[m.as] = new Set(groupRows.map((r) => String(r[m.field] ?? ""))).size;
         continue;
       }
-      if (!m.field) continue;
       const v = numericAgg(groupRows, m.field, m.agg);
       out[m.as] = Number.isNaN(v) ? null : v;
     }
