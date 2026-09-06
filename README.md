@@ -1,95 +1,140 @@
 # ChartBrain
 
-> 面向业务服务的「自然语言 → 图表」智能中间件：让任何用 Highcharts / ECharts 的消费端服务，都能让用户用自然语言**按需**生成图表，而不是「一个需求开发一个图表」。
+> 面向业务服务的「自然语言 → 图表」智能中间件：让任何用 **Highcharts / ECharts** 的消费端服务，
+> 都能让用户用自然语言**按需**生成图表，而不是「一个需求开发一个图表」。
+> **库无关、业务无关、数据不出域。**
 
 ## 它解决什么问题
 
 消费端服务（业务服务，各自用 Highcharts 或 ECharts 渲染图表）目前的模式是：
-**用户提一个需求 → 开发者写死一个图表 → 上线**。但同一份数据（比如金融数据）上，用户的分析诉求是多样且随时变化的，这种模式无法满足用户随时随地、临时起意地要各种图表来分析。
+**用户提一个需求 → 开发者写死一个图表 → 上线**。但同一份数据（比如金融数据）上，用户的
+分析诉求多样且随时变化——ChartBrain 把「图表智能」从业务服务解耦出来，做成**独立服务 + 消费端
+SDK**，供多个消费端复用。
 
-ChartBrain 把这些「图表智能」从业务服务里解耦出来，做成一个**库无关、业务无关**的独立服务 + 消费端 SDK，供多个消费端复用。
-
-## 怎么工作
+## 架构（一句话）
 
 ```
-用户自然语言问题
-        │
-        ▼
-┌──────────────────────────────────────────────┐
-│ 消费端服务（Node/TS，用 Highcharts 或 ECharts）│
-│ 发送：自然语言 + 所用库声明 + 列 schema/样例数据 │
-└──────────────────┬───────────────────────────┘
-                   ▼
-┌──────────────────────────────────────────────┐
-│ ChartBrain 服务端（Python / FastAPI）· 无状态 │
-│ ① LLM（可插拔多 Provider）理解问题             │
-│    产出「轻量中性 spec + 声明式变换计划」       │
-│ ② L1/L2 校验 → 返回 spec/变换计划（D13）      │
-└──────────────────┬───────────────────────────┘
-                   ▼
-┌──────────────────────────────────────────────┐
-│ chartbrain-sdk（TypeScript）· 确定性步骤全在这│
-│ ① 本地执行声明式变换计划（groupBy/aggregate/   │
-│    filter/sort…）                             │
-│ ② 转换：中性 spec → 库配置                    │
-│    （Highcharts 自研 / ECharts 经 flint-js）  │
-│ ③ 数据绑定 → 交给自己的图表库渲染              │
-└──────────────────┬───────────────────────────┘
-                   ▼
-        消费端用自己的图表库渲染，呈现给用户
+server（Python，无状态）       SDK（TS，在消费端）          消费端
+NL + schema + 样例 ──→ LLM 产出 中性 spec + 变换计划 ──→ 变换执行 + 转换 + 绑定 ──→ Highcharts / ECharts 渲染
+                     （L1/L2 校验）                    （全部确定性步骤，D13）
 ```
 
-- **「怎么算」**（变换逻辑）由 LLM 以声明式计划产出；
-- **「去算」**（变换执行 + spec→库配置转换，D13）由 SDK 在消费端本地确定性执行，全量数据不出业务域；
-- **「怎么渲染」** 留在消费端自己的图表库，ChartBrain 不碰 UI。
+- **LLM 只做「意图表达」**：输出受约束的**库无关中性 spec**（图型白名单 + 编码 + 声明式变换计划），
+  不写代码/SQL、不产库配置、不碰计算；
+- **全部确定性步骤在消费端 SDK**：声明式变换执行（filter/aggregate/sort/limit）→ 中性 spec → 库配置
+  （Highcharts 转换器自研 / ECharts 经 [flint-js](https://github.com/microsoft/flint-chart)）→ 数据绑定；
+- **数据不出域**：全量真实数据只在消费端，服务端只见列 schema + 少量样例。
 
-## 设计原则（来自竞品调研沉淀）
+## 消费端三步接入（Highcharts 示例）
 
-1. **LLM 只做「意图表达」，不碰数值计算，不产出代码/SQL/库配置** —— 只输出受约束的中性 spec。
-2. **中性 spec + 确定性转换器 = 库无关**：库知识是代码（转换器，随 SDK 在消费端执行，D13），不是让 LLM 背 schema。
-3. **spec 做窄**：可枚举的一律 enum、`additionalProperties: false`；字段引用必须命中真实列 schema。
-4. **三层校验 + 单轮修复**：L1 schema → L2 字段命中真实列 → L3 渲染冒烟；只允许一轮 validate→repair→revalidate。
-5. **权限在「执行期」强制，不在「提示词期」**；服务端只见 schema + 少量样例。
-6. **不做 text-to-SQL，不做「LLM 生成代码再 exec」**（Vanna.ai CVE-2024-5565 的教训）。
+**① 发自然语言给 server**（server 返回库无关的中性 spec，`chart_spec` 内含 `transform_plan`）：
 
-## 组件
+```bash
+curl -X POST http://127.0.0.1:8000/v1/charts \
+  -H "Content-Type: application/json" \
+  -d '{"query":"各区域营收对比，按营收从高到低","library":"highcharts",
+       "columns":[{"name":"month","type":"string"},{"name":"region","type":"string"},{"name":"revenue","type":"number"}],
+       "data_sample":[{"month":"2026-01","region":"华东","revenue":1200}]}'
+```
 
-| 组件 | 语言 | 职责 | 计划里程碑 |
-|---|---|---|---|
-| `server/`（chartbrain-server） | Python / FastAPI | API、LLM Provider 抽象、spec 生成 + L1/L2 校验（无状态，不产库配置，D13） | M1 / M2 |
-| `sdk/`（@chartbrain/sdk） | TypeScript | 变换执行 + 确定性转换（Highcharts 自研 / ECharts 经 flint-js，D12）+ 数据绑定 | M3 |
-| `examples/` | Node/TS | 消费端接入 demo（Highcharts / ECharts） | M4 |
-| `specs/` | JSON Schema | 中性 spec / 变换计划的契约定义 | M2 |
+**② 接入 `@chartbrain/sdk`，变换 + 转换一步完成**（你的全量数据本地执行）：
+
+```ts
+import { buildHighcharts } from "@chartbrain/sdk";
+
+const resp = await fetch(`${SERVER}/v1/charts`, { /* 请求见上 */ });
+const { chart_spec } = await resp.json();
+const option = buildHighcharts(yourFullData, chart_spec); // 数据不出域
+```
+
+**③ 用你现有的 Highcharts 渲染**：
+
+```ts
+Highcharts.chart("container", option);
+```
+
+用 ECharts 只差一步：把 `buildHighcharts` 换成 `buildECharts`（SDK 内部经 flint-js 编译），
+**同一份 spec 双库输出一致**——可运行 `examples/dual-demo` 亲眼对比。
+
+> 现成可跑的例子：`examples/highcharts-demo`（单库）与 `examples/dual-demo`（同 spec 双库并排）。
+
+## 本地开发
+
+**server**（Python 3.11+，DeepSeek/OpenAI 兼容 key 放 `server/.env`，模板见 `server/.env.example`）：
+
+```bash
+cd server
+python -m venv .venv && .\.venv\Scripts\pip install -e ".[dev]"
+.\.venv\Scripts\python -m pytest -q        # 31 tests
+.\.venv\Scripts\uvicorn chartbrain_server.main:app --port 8000
+```
+
+**sdk**（Node 18+）：
+
+```bash
+cd sdk
+npm install
+npm run typecheck && npm run build && npm test   # 22 tests
+```
+
+**双库对比 demo**：
+
+```bash
+cd examples/dual-demo && npm i && node demo.mjs "每月营收面积图"
+# 打开生成的 dual-chart.html
+```
+
+CI（GitHub Actions）：push/PR 自动跑 server pytest + sdk typecheck/build/vitest。
 
 ## 仓库结构
 
 ```
 viz-ai/
-├── README.md
-├── docs/
-│   └── design.md            # 详细设计文档（决策记录、spec 草案、路线图）
-├── research/                # 竞品调研分报告（LLM 图表框架 / 开源 BI / 商业产品）
-├── ChartBrain_调研汇总报告.md # 调研汇总：可借鉴点 + 竞品不足 + 避坑清单
-├── .gitignore
-└── (server/ sdk/ examples/ specs/ 待建)
+├── specs/chart-spec.schema.json   # 中性 spec JSON Schema（契约源，双端共享）
+├── server/                        # chartbrain-server（Python/FastAPI，无状态意图层）
+│   ├── chartbrain_server/
+│   │   ├── api/        # POST /v1/charts（L1/L2 校验、错误分类、审计日志）
+│   │   ├── llm/        # Provider 抽象：mock / openai-compatible（DeepSeek 等）
+│   │   └── spec/       # prompt 编排、生成管线、L2 校验
+│   ├── scripts/eval_spec_baseline.py   # spec 质量基线评测
+│   └── tests/                          # 31 tests
+├── sdk/                             # @chartbrain/sdk（TypeScript，确定性执行层）
+│   └── src/  transform.ts（变换运行时）· converter/highcharts.ts · converter/echarts.ts（flint-js）
+├── examples/
+│   ├── highcharts-demo/            # 单库端到端 demo
+│   └── dual-demo/                  # 同一 spec → Highcharts + ECharts 并排
+├── docs/design.md                  # 设计文档：决策记录 D1–D13 + spec 草案 + 路线图
+├── research/                       # 竞品调研分报告
+├── ChartBrain_调研汇总报告.md        # 调研结论（可借鉴点 / 不足 / 避坑）
+├── .github/workflows/ci.yml
+├── CONTRIBUTING.md
+└── LICENSE
 ```
+
+## 设计原则（来自竞品调研沉淀）
+
+1. LLM 只做「意图表达」：不碰数值计算，不产出代码 / SQL / 库配置；
+2. 中性 spec + 确定性转换器 = 库无关（库知识是代码，随 SDK 发布执行）；
+3. spec 做窄：可枚举一律 enum、`additionalProperties:false`、字段引用命中真实列；
+4. 三层校验 + 单轮修复：L1 schema → L2 字段/类型/白名单 → L3 渲染冒烟（SDK 内）；
+5. 权限在「执行期」强制；数据不出域；
+6. 不做 text-to-SQL、不做「LLM 生成代码再 exec」（Vanna.ai CVE-2024-5565 教训）；
+7. 能力边界外诚实拒绝（占比/环比等 → 要求澄清），绝不硬凑错误 spec。
 
 ## 路线图
 
-- **M1 骨架 ✅（2026-09-05）**：`server/` FastAPI + LLM Provider 抽象（mock/openai-compat）+ `/v1/charts` 占位；`specs/chart-spec.schema.json` v0.1；pytest 12 passed。
-- **M2 核心生成 ✅（2026-09-05）**：Prompt 工程产出中性 spec + 结构化输出 + L1/L2 校验与单轮修复；DeepSeek 基线可表达 8/8、边界诚实拒绝 2/2（Highcharts 转换器随 SDK 在 M3，D13）。
-- **M3 SDK ✅（2026-09-05）**：`@chartbrain/sdk` 变换算子执行 + Highcharts 转换器（D13）+ 数据绑定；typecheck/build 通过，vitest 17 passed。
-- **M4 端到端 ✅（2026-09-05）**：`examples/highcharts-demo` 消费端 demo（48 行金融数据）——自然语言 → DeepSeek spec → SDK 变换/转换 → Highcharts 出图（bar/area 实测通过）。
-- **M4b 工程质量 ✅（2026-09-05）**：GitHub Actions CI（server pytest / sdk typecheck+build+vitest）；LLM 超时/重试/错误分类（Provider 故障→503）+ 请求审计日志。
-- **M5 双库化 ✅（2026-09-05）**：ECharts 后端 = SDK 内复用 flint-js `assembleECharts`；同一 spec → Highcharts / ECharts **双库并排渲染一致**（`examples/dual-demo` 实测 bar/area）。
-- **M6 扩展**：更多图表类型、MCP 交付、自纠错回路、评测/回归管线（渲染比对）。
+- **M1 骨架 ✅** · **M2 核心生成 ✅**（DeepSeek 基线 8/8 + 诚实拒绝 2/2）· **M3 SDK ✅**
+- **M4 端到端 ✅**（NL→spec→SDK→Highcharts 出图）· **M4b 工程质量 ✅**（CI + LLM 韧性 + 审计）
+- **M5 双库化 ✅**（同一 spec → Highcharts / ECharts 并排渲染一致）
+- 前瞻：渲染比对回归、`/v1/validate`、MCP 交付、`derive` 派生列（占比/环比）、多轮改图
 
-## 竞品定位（一句话）
+## 竞品定位
 
-微软 2026-07 开源的 Flint 与我们的路线最接近（中性 spec + 确定性编译），但**「库无关中性 spec + Highcharts/ECharts 确定性转换器 + 声明式数据变换 + 消费端 SDK 执行」的完整组合目前是行业空位**——详见 `docs/design.md` 与调研报告。
+微软 2026-07 开源的 [Flint](https://github.com/microsoft/flint-chart) 与我们的路线最接近
+（中性 spec + 确定性编译），但 **「库无关中性 spec + Highcharts/ECharts 确定性转换 +
+声明式数据变换 + 消费端 SDK 执行」的完整组合目前是行业空位**（见调研报告）。Flint 已被吸收为
+ECharts 后端的编译引擎（D12）。
 
-## 文档
+## 许可
 
-- [docs/design.md](docs/design.md) —— 完整设计（决策记录、架构、spec 草案、约束与避坑）
-- `ChartBrain_调研汇总报告.md` —— 调研结论总览
-- `research/` —— 各主题详细调研与来源 URL
+[MIT](LICENSE) © 2026 Yuqi Sun
