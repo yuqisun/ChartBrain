@@ -77,7 +77,7 @@ viz-ai/
 ## 路线图
 
 - **M1 骨架 ✅（2026-09-05）**：`server/` FastAPI + LLM Provider 抽象（mock/openai-compat）+ `/v1/charts` 占位；`specs/chart-spec.schema.json` v0.1；pytest 12 passed。
-- **M2 核心生成（Highcharts 先行）**：Prompt 工程产出中性 spec + 结构化输出 + L1/L2 校验与单轮修复、spec 质量基线（Highcharts 转换器随 SDK 在 M3，D13）。
+- **M2 核心生成 ✅（2026-09-05）**：Prompt 工程产出中性 spec + 结构化输出 + L1/L2 校验与单轮修复；DeepSeek 基线可表达 8/8、边界诚实拒绝 2/2（Highcharts 转换器随 SDK 在 M3，D13）。
 - **M3 SDK**：TS SDK 实现变换算子执行 + Highcharts 转换器（D13）+ 数据绑定。
 - **M4 端到端**：Node 消费端 demo（Highcharts），自然语言 → 金融数据图表跑通。
 - **M5 双库化**：ECharts 后端（候选：SDK 内复用 flint-js `assembleECharts`，见 design.md D12）+ ECharts demo。
