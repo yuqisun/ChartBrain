@@ -170,7 +170,7 @@
 - derive/binTime **保留整表并新增一列**（不像 aggregate 会丢弃列）；derive 输出列一律 number；
 - 除零、缺失 operand → **null**（不抛错不臆造）；binTime 输出 `2026-01` / `2026-Q1` / `2026` 形式标签（string）。
 
-**P2（规划，语义待用例锁死）：`percent` 与 `growth`**
+**P2（规划，语义已用具体用例锁定在 `docs/P2-window-semantics.md`，待确认后实现）：`percent` 与 `growth`**
 
 ```jsonc
 // 每个 region 内各 product 的数量占比（分母 = region 分区和，结果 0~1）
