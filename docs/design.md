@@ -296,7 +296,7 @@
 | M4 端到端 ✅（2026-09-05）| Node 消费端 demo（金融数据 48 行，**Highcharts**，`examples/highcharts-demo`） | 自然语言跑通「问 → 图」：bar/area 两种问题均出图 |
 | M4b 工程质量 ✅（2026-09-05）| GitHub Actions CI（server pytest + sdk typecheck/build/vitest）；LLM 超时/重试/错误分类（provider→503）/请求审计日志 | CI 绿；加固单测通过 |
 | M5 双库化 ✅（2026-09-05）| **ECharts 后端 = SDK 内 flint-js `assembleECharts`**（D12 兑现）+ `buildECharts`；`examples/dual-demo` 同 spec 双库并排渲染 | 同一 spec 双库输出一致：5 图型（SDK 22 passed）+ 双库渲染实测一致（bar/area） |
-| P1 能力扩展（进行中 2026-09，D14）| `binTime`（月/季/年分桶）+ `derive`（二元+常量四则，两步链） | schema/L2/提示词/SDK 算子/测试 + eval 扩样 |
+| P1 能力扩展 ✅（2026-09-05，D14）| `binTime`（月/季/年分桶）+ `derive`（二元+常量四则，两步链）实现 | 35 server + 27 sdk passed；eval 10/10 + 边界 2/2（含 net/quarterly 新用例） |
 | P2 能力扩展（规划，D14）| `percent`（4 窗口口径）+ `growth`（mom/yoy，null 缺期） | 语义用例锁死 → 实现 → eval |
 | M6 扩展 | 更多图型、MCP 交付、自纠错回路、渲染比对回归评测 | 回归管线可跑 |
 

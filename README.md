@@ -126,7 +126,8 @@ viz-ai/
 - **M1 骨架 ✅** · **M2 核心生成 ✅**（DeepSeek 基线 8/8 + 诚实拒绝 2/2）· **M3 SDK ✅**
 - **M4 端到端 ✅**（NL→spec→SDK→Highcharts 出图）· **M4b 工程质量 ✅**（CI + LLM 韧性 + 审计）
 - **M5 双库化 ✅**（同一 spec → Highcharts / ECharts 并排渲染一致）
-- 前瞻：渲染比对回归、`/v1/validate`、MCP 交付、`derive` 派生列（占比/环比）、多轮改图
+- **P1 能力扩展 ✅（2026-09-05，D14）**：`binTime`（date 按月/季/年分桶）+ `derive`（二元+常量四则，两步链）；35 server + 27 sdk tests，eval 10/10 + 边界 2/2
+- 前瞻：`percent`（占比，4 窗口口径）与 `growth`（环比/同比）（P2，D14）、渲染比对回归、`/v1/validate`、MCP 交付、多轮改图
 
 ## 竞品定位
 
