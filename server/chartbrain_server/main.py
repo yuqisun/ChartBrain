@@ -13,8 +13,9 @@ def create_app() -> FastAPI:
         title="chartbrain-server",
         version=__version__,
         description=(
-            "ChartBrain 无状态意图层：自然语言 → 轻量中性 chart spec + 声明式变换计划。"
-            "不产库配置（D13），确定性步骤在消费端 @chartbrain/sdk。"
+            "ChartBrain stateless intent layer: natural language -> neutral chart spec + "
+            "declarative transform plan. No library config is produced here (D13); all "
+            "deterministic steps run in the consumer @chartbrain/sdk."
         ),
     )
     app.include_router(api_router)

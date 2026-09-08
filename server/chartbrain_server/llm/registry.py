@@ -22,4 +22,4 @@ def get_provider(name: str | None = None, s: Settings | None = None) -> BaseLLMP
         from .openai_compat import OpenAIChatProvider
 
         return OpenAIChatProvider(s)
-    raise ValueError(f"未知 LLM provider: {provider_name!r}（可用: {list_providers()}）")
+    raise ValueError(f"Unknown LLM provider: {provider_name!r} (available: {list_providers()})")

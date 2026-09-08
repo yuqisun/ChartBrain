@@ -65,10 +65,10 @@ def test_mock_generation_l2_fails_when_column_missing() -> None:
 
 def test_clarification_error_short_circuits() -> None:
     req = _req([{"name": "revenue", "type": "number"}])
-    provider = _FakeProvider('{"error": "没有可用于分组的维度列"}')
+    provider = _FakeProvider('{"error": "No dimension column to group by"}')
     result = asyncio.run(generate_spec(req, provider))
     assert result.errors
-    assert "澄清请求" in result.errors[0]
+    assert "Clarification required" in result.errors[0]
 
 
 def test_invalid_json_repairs_then_fails() -> None:
@@ -241,7 +241,7 @@ def test_l2_sort_missing_by_rejected() -> None:
         },
     }
     errors = validate_l2(spec, req)
-    assert any("缺少 by" in e for e in errors)
+    assert any("missing 'by'" in e for e in errors)
 
 
 def test_l2_filter_missing_field_rejected() -> None:
@@ -258,7 +258,7 @@ def test_l2_filter_missing_field_rejected() -> None:
         },
     }
     errors = validate_l2(spec, req)
-    assert any("缺少 field" in e for e in errors)
+    assert any("missing 'field'" in e for e in errors)
 
 
 def test_l2_measure_missing_as_rejected() -> None:
@@ -281,7 +281,7 @@ def test_l2_measure_missing_as_rejected() -> None:
         },
     }
     errors = validate_l2(spec, req)
-    assert any("缺少 as" in e for e in errors)
+    assert any("missing 'as'" in e for e in errors)
 
 
 def test_l2_unknown_op_rejected() -> None:
@@ -296,4 +296,4 @@ def test_l2_unknown_op_rejected() -> None:
         },
     }
     errors = validate_l2(spec, req)
-    assert any("未知算子" in e for e in errors)
+    assert any("unknown operator" in e for e in errors)

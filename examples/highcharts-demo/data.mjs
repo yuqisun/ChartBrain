@@ -3,7 +3,7 @@
  * 确定性生成：2025-07 ~ 2026-06 × 4 区域，含营收/订单量/成本。
  */
 
-const REGIONS = ["华东", "华南", "华北", "西南"];
+const REGIONS = ["East", "North", "South", "West"];
 
 export const columns = [
   { name: "month", type: "string" },

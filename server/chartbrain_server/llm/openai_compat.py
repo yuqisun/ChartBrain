@@ -43,7 +43,8 @@ class OpenAIChatProvider(BaseLLMProvider):
     ) -> str:
         if not self.api_key:
             raise RuntimeError(
-                "OpenAI 兼容 Provider 需要 OPENAI_API_KEY（或改设 CHARTBRAIN_LLM_PROVIDER=mock）"
+                "OpenAI-compatible provider needs OPENAI_API_KEY "
+                "(or set CHARTBRAIN_LLM_PROVIDER=mock)"
             )
         payload: dict = {
             "model": self.model,

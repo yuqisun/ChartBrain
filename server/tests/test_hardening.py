@@ -37,7 +37,7 @@ def test_provider_failure_marked_as_provider_kind() -> None:
     result = asyncio.run(generate_spec(_req(), _BoomProvider()))
     assert result.error_kind == "provider"
     assert result.spec is None
-    assert result.errors and "LLM 调用失败" in result.errors[0]
+    assert result.errors and "LLM call failed" in result.errors[0]
 
 
 def test_provider_failure_returns_503(monkeypatch) -> None:

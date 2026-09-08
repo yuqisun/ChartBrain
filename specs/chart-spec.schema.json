@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://chartbrain.dev/specs/chart-spec.schema.json",
   "title": "ChartBrain Neutral Chart Spec (v0.1)",
-  "description": "LLM 的输出契约、库无关的中间表示。约束：窄 schema、可枚举一律 enum、additionalProperties:false、字段只准引用「原始列或前序变换产出的列」。与 docs/design.md §4 对应。",
+  "description": "ChartBrain neutral chart spec: library-agnostic intermediate representation. Narrow schema: enums everywhere, additionalProperties:false, fields may reference only original columns or columns produced/kept by prior transforms. See docs/design.md §4.",
   "type": "object",
   "additionalProperties": false,
   "required": ["schema_version", "chart", "encodings"],
@@ -14,14 +14,14 @@
       "required": ["type"],
       "properties": {
         "type": {
-          "description": "受控图型白名单（MVP：先按 Highcharts 五种图型落地，D11）",
+          "description": "Controlled chart-type whitelist (MVP: first five Highcharts types, D11)",
           "enum": ["bar", "line", "pie", "scatter", "area"]
         },
         "title": { "type": "string", "maxLength": 200 }
       }
     },
     "transform_plan": {
-      "description": "声明式变换计划。缺省 = 直接用原始数据（不过变换）。steps 顺序执行，前一步输出是后一步输入。",
+      "description": "Declarative transform plan. Omit = use raw data as-is. Steps run in order; output of one step is the input of the next.",
       "type": "object",
       "additionalProperties": false,
       "required": ["steps"],
@@ -51,7 +51,7 @@
       "properties": {
         "field": { "type": "string", "minLength": 1 },
         "value_type": {
-          "description": "字段语义类型提示（帮助转换器与 SDK 处理轴/刻度；不含库方言）",
+          "description": "Field semantics hint (helps converter/SDK choose axes/scales; never a library dialect)",
           "enum": ["categorical", "numeric", "temporal"]
         }
       }
@@ -108,7 +108,7 @@
       }
     },
     "measure": {
-      "description": "field 可省略，仅当 agg=count 时（此时统计行数）；其余聚合需引用当前表存在的列。",
+      "description": "field is optional and only allowed when agg=count (counts rows); other aggregations must reference a column existing in the current table.",
       "type": "object",
       "additionalProperties": false,
       "required": ["agg", "as"],

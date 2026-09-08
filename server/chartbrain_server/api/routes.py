@@ -52,10 +52,10 @@ async def create_chart(req: ChartRequest) -> ChartResponse | JSONResponse:
     if result.errors:
         status = 503 if result.error_kind == "provider" else 422
         detail = {
-            "validation": "spec 生成未通过校验（L1/L2）",
-            "clarification": "spec 生成需要澄清",
-            "provider": "LLM Provider 调用失败",
-        }.get(result.error_kind, "spec 生成失败")
+            "validation": "Spec generation failed L1/L2 validation",
+            "clarification": "Spec generation needs clarification",
+            "provider": "LLM provider call failed",
+        }.get(result.error_kind, "Spec generation failed")
         logger.info(
             "charts.fail request_id=%s status=%d kind=%s errors=%d latency_ms=%s",
             request_id,

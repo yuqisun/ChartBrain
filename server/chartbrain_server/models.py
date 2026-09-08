@@ -30,7 +30,8 @@ class ChartRequest(BaseModel):
     columns: list[Column] = Field(min_length=1, max_length=200)
     data_sample: list[dict[str, Any]] = Field(
         default_factory=list,
-        description="≤N 行真实样例（可脱敏），帮助 LLM 理解取值分布；默认不含样例",
+        description="Up to N sample rows (may be masked); helps the LLM understand value "
+        "distribution. Omitted by default.",
     )
     constraints: Constraints | None = None
 
@@ -38,7 +39,7 @@ class ChartRequest(BaseModel):
     @classmethod
     def _query_not_blank(cls, v: str) -> str:
         if not v.strip():
-            raise ValueError("query 不能为空或纯空白")
+            raise ValueError("query must not be empty or whitespace")
         return v
 
 

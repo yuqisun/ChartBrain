@@ -11,7 +11,7 @@ from .base import BaseLLMProvider
 
 _CANNED_SPEC = {
     "schema_version": 1,
-    "chart": {"type": "bar", "title": "月度营收趋势"},
+    "chart": {"type": "bar", "title": "Monthly revenue trend"},
     "transform_plan": {
         "steps": [
             {

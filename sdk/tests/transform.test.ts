@@ -129,6 +129,6 @@ describe("unknown op", () => {
   it("抛错", () => {
     expect(() =>
       executeTransform(sales, [{ op: "pivot" } as never]),
-    ).toThrowError(/不支持的变换算子/);
+    ).toThrowError(/Unsupported transform op/);
   });
 });

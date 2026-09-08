@@ -57,14 +57,16 @@ async def generate_spec(req: ChartRequest, provider: BaseLLMProvider) -> Generat
             raw = await provider.complete(SYSTEM_PROMPT, user_prompt, json_mode=True)
         except Exception as exc:  # noqa: BLE001 —— Provider 层故障（网络/认证/超时/5xx）
             return GenerationResult(
-                errors=[f"LLM 调用失败（{type(exc).__name__}）: {exc}"],
+                errors=[f"LLM call failed ({type(exc).__name__}): {exc}"],
                 error_kind="provider",
                 repair_rounds=rounds,
             )
         try:
             obj = extract_json(raw)
         except (json.JSONDecodeError, ValueError) as exc:
-            feedback = f"模型未返回合法 JSON（{exc}）。原文前 200 字：{raw[:200]}"
+            feedback = (
+                f"Model did not return valid JSON ({exc}). First 200 chars: {raw[:200]}"
+            )
             if rounds >= MAX_REPAIR_ROUNDS:
                 return GenerationResult(errors=[feedback], repair_rounds=rounds)
             rounds += 1
@@ -74,12 +76,12 @@ async def generate_spec(req: ChartRequest, provider: BaseLLMProvider) -> Generat
         if isinstance(obj, dict) and obj.get("error"):
             # 模型主动澄清：歧义/缺字段，不硬答（red line）
             return GenerationResult(
-                errors=[f"澄清请求: {obj['error']}"],
+                errors=[f"Clarification required: {obj['error']}"],
                 error_kind="clarification",
                 repair_rounds=rounds,
             )
         if not isinstance(obj, dict):
-            feedback = "模型输出不是 JSON 对象"
+            feedback = "Model output is not a JSON object"
             if rounds >= MAX_REPAIR_ROUNDS:
                 return GenerationResult(errors=[feedback], repair_rounds=rounds)
             rounds += 1
@@ -102,6 +104,7 @@ def _append_feedback(user_prompt: str, errors: list[str]) -> str:
     block = "\n".join(f"- {e}" for e in errors)
     return (
         f"{user_prompt}\n\n"
-        f"【修复请求（第 1 轮，仅此一次机会）】上一次输出的 spec 未通过校验：\n{block}\n"
-        f"请严格按规则修正后重新只输出一个 JSON 对象。"
+        "REPAIR REQUEST (first and only round): the previous spec failed validation:\n"
+        f"{block}\n"
+        "Fix it strictly according to the rules and output ONLY a single JSON object again."
     )

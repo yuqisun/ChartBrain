@@ -161,7 +161,7 @@ export function executeTransform(data: Row[], steps: TransformStep[]): Row[] {
         rows = applyLimit(rows, step);
         break;
       default:
-        throw new Error(`不支持的变换算子: ${(step as TransformStep).op}`);
+        throw new Error(`Unsupported transform op: ${(step as TransformStep).op}`);
     }
   }
   return rows;

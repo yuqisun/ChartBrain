@@ -1,12 +1,12 @@
-"""M2 验收：spec 质量基线评测（docs/design.md §9 M2）。
+"""M2 acceptance: spec-quality baseline eval (docs/design.md §9 M2).
 
-对一组固定 NL 用例跑真实 LLM（默认 DeepSeek，按 .env），统计：
-- 可表达用例的 L1/L2 通过率；
-- 边界用例（占比/环比等）的「诚实拒绝」率（输出澄清或 L2 明确报错）。
+Runs a fixed set of NL cases against the real LLM (DeepSeek by default, per .env) and reports:
+- L1/L2 pass rate for expressible cases;
+- "honest refusal" rate for boundary cases (percent/MoM etc. must ask for clarification).
 
-用法（在 server/ 目录，先装好依赖并配置 .env）：
+Usage (in server/, deps installed and .env configured):
     .\.venv\Scripts\python.exe scripts\eval_spec_baseline.py
-结果同时写入 server/scripts/eval_report.json。
+Also writes results to server/scripts/eval_report.json.
 """
 
 from __future__ import annotations
@@ -16,7 +16,7 @@ import json
 import sys
 from pathlib import Path
 
-# 允许从 scripts/ 直接运行
+# allow running directly from scripts/
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from chartbrain_server.llm import get_provider  # noqa: E402
@@ -34,70 +34,70 @@ COLUMNS = {
 }
 
 CASES: list[dict] = [
-    # ---- 可表达：预期 200 + L1/L2 通过 ----
+    # ---- expressible: expect 200 + L1/L2 pass ----
     {
         "name": "monthly_line",
         "expect": "ok",
-        "query": "按月份看营收走势",
+        "query": "Show monthly revenue trend",
         "columns": COLUMNS["finance"],
         "data_sample": [
-            {"month": "2026-01", "region": "华东", "revenue": 1200, "orders": 40},
-            {"month": "2026-02", "region": "华东", "revenue": 1500, "orders": 45},
+            {"month": "2026-01", "region": "East", "revenue": 1200, "orders": 40},
+            {"month": "2026-02", "region": "East", "revenue": 1500, "orders": 45},
         ],
     },
     {
         "name": "region_bar",
         "expect": "ok",
-        "query": "各区域营收对比柱状图，从高到低",
+        "query": "Compare revenue by region as a bar chart, highest first",
         "columns": COLUMNS["finance"],
     },
     {
         "name": "region_pie",
         "expect": "ok",
-        "query": "各区域营收占比饼图",
+        "query": "Pie chart of revenue share by region",
         "columns": COLUMNS["finance"],
     },
     {
         "name": "top3_months",
         "expect": "ok",
-        "query": "营收最高的前三个月",
+        "query": "Show the top three months by revenue",
         "columns": COLUMNS["finance"],
     },
     {
         "name": "filter_two_regions",
         "expect": "ok",
-        "query": "只看华东和华南两个区域的营收对比",
+        "query": "Compare revenue for East and South regions only",
         "columns": COLUMNS["finance"],
     },
     {
         "name": "avg_revenue_month",
         "expect": "ok",
-        "query": "每月平均单笔营收是多少，画柱状图",
+        "query": "Average revenue per order by month, as a bar chart",
         "columns": COLUMNS["finance"],
     },
     {
         "name": "scatter_revenue_orders",
         "expect": "ok",
-        "query": "营收和订单量的关系散点图",
+        "query": "Scatter plot of revenue vs orders",
         "columns": COLUMNS["finance"],
     },
     {
         "name": "area_monthly",
         "expect": "ok",
-        "query": "每月营收面积图",
+        "query": "Monthly revenue area chart",
         "columns": COLUMNS["finance"],
     },
-    # ---- 边界：超出 MVP 表达式能力，预期「诚实拒绝」 ----
+    # ---- boundary: beyond MVP expression capability; expect an honest refusal ----
     {
         "name": "share_by_region_per_month",
         "expect": "refuse",
-        "query": "按月份看各区域营收占比趋势",
+        "query": "Monthly percentage share trend of each region in total revenue",
         "columns": COLUMNS["finance"],
     },
     {
         "name": "mom_growth",
         "expect": "refuse",
-        "query": "营收环比增长多少",
+        "query": "What is the month-over-month revenue growth?",
         "columns": COLUMNS["finance"],
     },
 ]
@@ -114,7 +114,7 @@ async def run_one(case: dict, provider) -> dict:
     )
     result = await generate_spec(req, provider)
     ok = result.errors == [] and result.spec is not None
-    # 边界用例：无 spec、但有「澄清/明确 L2 错误」也算正确行为
+    # boundary cases: no spec but a clear clarification/validation error = correct behavior
     graceful = (not ok) and bool(result.errors)
     return {
         "name": case["name"],
@@ -142,15 +142,15 @@ async def main() -> None:
         detail = (
             f"type={r['chart_type']}"
             if r["ok"]
-            else ("(拒绝合理)" if r["graceful_refuse"] else f"errors={r['errors']}")
+            else ("(reasonable refusal)" if r["graceful_refuse"] else f"errors={r['errors']}")
         )
         print(f"[{mark}] {r['name']:<24} expect={r['expect']:<7} {detail}")
 
-    print("\n===== 汇总 =====")
-    print(f"可表达用例 通过率: {ok_pass}/{len(ok_cases)}")
-    print(f"边界用例   诚实拒绝率: {refuse_pass}/{len(refuse_cases)}")
+    print("\n===== summary =====")
+    print(f"Expressible pass rate: {ok_pass}/{len(ok_cases)}")
+    print(f"Boundary honest-refusal rate: {refuse_pass}/{len(refuse_cases)}")
     if ok_cases:
-        print(f"综合 spec 质量基线(可表达): {ok_pass / len(ok_cases):.0%}")
+        print(f"Spec quality baseline (expressible): {ok_pass / len(ok_cases):.0%}")
 
     report = {
         "summary": {
@@ -163,7 +163,7 @@ async def main() -> None:
     }
     out = Path(__file__).resolve().parent / "eval_report.json"
     out.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
-    print(f"\n报告已写入 {out}")
+    print(f"\nReport written to {out}")
 
 
 if __name__ == "__main__":

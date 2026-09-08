@@ -1,13 +1,12 @@
 /**
- * ChartBrain M4 端到端 demo（Highcharts 消费端）。
+ * ChartBrain M4 end-to-end demo (Highcharts consumer).
  *
- * 流程：本地数据 + 自然语言 → chartbrain-server(/v1/charts) 出 spec
- *       → @chartbrain/sdk 变换 + 转换 → Highcharts option → 生成 HTML 页面
+ * Flow: local data + natural language → chartbrain-server (/v1/charts) → neutral spec
+ *       → @chartbrain/sdk transform + convert → Highcharts option → HTML page
  *
- * 前置：① sdk 已构建（cd ../../sdk && npm run build）
- *       ② chartbrain-server 在跑（cd ../../server && .\.venv\Scripts\uvicorn ...）
- * 运行：node demo.mjs ["你的问题"]
- *       → 打开生成的 chart-output.html 看图
+ * Prereq: ① sdk built (cd ../../sdk && npm run build)
+ *         ② chartbrain-server running (cd ../../server && .\.venv\Scripts\uvicorn ...)
+ * Run: node demo.mjs ["your question"]  → open the generated chart-output.html
  */
 
 import { writeFileSync } from "node:fs";
@@ -16,11 +15,11 @@ import { buildHighcharts } from "../../sdk/dist/index.js";
 import { columns, rows } from "./data.mjs";
 
 const SERVER = process.env.CHARTBRAIN_SERVER ?? "http://127.0.0.1:8000";
-const query = process.argv[2] ?? "各区域营收对比，按营收从高到低";
+const query = process.argv[2] ?? "Revenue by region, highest first";
 
 async function main() {
-  console.log(`❓ 问题: ${query}`);
-  console.log(`  数据集: ${rows.length} 行 x ${columns.length} 列\n`);
+  console.log(`❓ Question: ${query}`);
+  console.log(`   Dataset: ${rows.length} rows x ${columns.length} columns\n`);
 
   const resp = await fetch(`${SERVER}/v1/charts`, {
     method: "POST",
@@ -39,25 +38,25 @@ async function main() {
     process.exit(1);
   }
 
-  console.log("✅ 中性 spec（server 返回）:");
+  console.log("✅ Neutral spec (from server):");
   console.log(JSON.stringify(body.chart_spec, null, 2));
   console.log();
 
-  // D13：确定性步骤全在消费端 SDK 完成
+  // D13: every deterministic step runs locally in the consumer SDK
   const option = buildHighcharts(rows, body.chart_spec);
-  console.log("📊 Highcharts option 摘要:");
+  console.log("📊 Highcharts option summary:");
   for (const s of option.series) {
-    console.log(`   - ${s.name}: ${Array.isArray(s.data) ? `${s.data.length} 个数据点` : ""}`);
+    console.log(`   - ${s.name}: ${Array.isArray(s.data) ? `${s.data.length} data points` : ""}`);
   }
 
   writeHtml(query, option);
-  console.log("\n✅ 已生成 chart-output.html —— 浏览器打开即可看到图表");
+  console.log("\n✅ Generated chart-output.html — open it in your browser");
 }
 
 function writeHtml(query, option) {
   const json = JSON.stringify(option);
   const html = `<!doctype html>
-<html lang="zh">
+<html lang="en">
 <head>
 <meta charset="utf-8" />
 <title>ChartBrain Demo — ${escapeHtml(query)}</title>
@@ -67,12 +66,12 @@ function writeHtml(query, option) {
 </head>
 <body>
 <h2>${escapeHtml(query)}</h2>
-<p><small>ChartBrain 端到端 demo · spec → SDK 变换/转换 → Highcharts 渲染</small></p>
-<div id="container"><p>加载中…</p></div>
+<p><small>ChartBrain end-to-end demo · spec → SDK transform/convert → Highcharts render</small></p>
+<div id="container"><p>Loading…</p></div>
 <script>
   if (!window.Highcharts) {
     document.getElementById('container').innerHTML =
-      '<p>❌ Highcharts 未能加载（CDN 不可达且本地未安装）。<br/>请运行 <code>npm i highcharts</code> 后重新 <code>node demo.mjs</code>。</p>';
+      '<p>❌ Highcharts failed to load (CDN unreachable and not installed locally).<br/>Run <code>npm i highcharts</code> and re-run <code>node demo.mjs</code>.</p>';
   } else {
     const option = ${json};
     option.chart = { ...(option.chart || {}), renderTo: 'container' };
