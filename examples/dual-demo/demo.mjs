@@ -87,7 +87,7 @@ function writeDualHtml(query, hc, ec) {
     if (el) el.innerHTML = '<p style="color:#c00">' + msg + '</p>';
   }
   if (!window.Highcharts) {
-    fail('hc', 'Highcharts failed to load (offline: run `npm i highcharts` and re-run demo.mjs)');
+    fail('hc', 'Highcharts failed to load (offline: run "npm i highcharts" and re-run demo.mjs)');
   } else {
     const opt = ${hcJson};
     opt.chart = { ...(opt.chart || {}), renderTo: 'hc' };
@@ -95,7 +95,7 @@ function writeDualHtml(query, hc, ec) {
     Highcharts.chart(opt);
   }
   if (!window.echarts) {
-    fail('ec', 'ECharts failed to load (offline: run `npm i echarts` and re-run demo.mjs)');
+    fail('ec', 'ECharts failed to load (offline: run "npm i echarts" and re-run demo.mjs)');
   } else {
     const ecChart = echarts.init(document.getElementById('ec'));
     const ecOpt = ${ecJson};
