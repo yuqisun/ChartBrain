@@ -30,6 +30,7 @@ COLUMNS = {
         {"name": "region", "type": "string"},
         {"name": "revenue", "type": "number"},
         {"name": "orders", "type": "number"},
+        {"name": "cost", "type": "number"},
     ]
 }
 
@@ -92,6 +93,18 @@ CASES: list[dict] = [
         "name": "share_by_region_per_month",
         "expect": "refuse",
         "query": "Monthly percentage share trend of each region in total revenue",
+        "columns": COLUMNS["finance"],
+    },
+    {
+        "name": "net_by_region_derive",
+        "expect": "ok",
+        "query": "Net revenue (revenue minus cost) by region",
+        "columns": COLUMNS["finance"],
+    },
+    {
+        "name": "quarterly_trend_bintime",
+        "expect": "ok",
+        "query": "Quarterly revenue trend using the date column",
         "columns": COLUMNS["finance"],
     },
     {

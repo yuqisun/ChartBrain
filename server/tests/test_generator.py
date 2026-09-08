@@ -297,3 +297,122 @@ def test_l2_unknown_op_rejected() -> None:
     }
     errors = validate_l2(spec, req)
     assert any("unknown operator" in e for e in errors)
+
+
+# ---------- L2: derive / binTime（P1, D14） ----------
+
+
+def test_l2_derive_and_binTime_valid() -> None:
+    req = _req(
+        [
+            {"name": "date", "type": "date"},
+            {"name": "region", "type": "string"},
+            {"name": "revenue", "type": "number"},
+            {"name": "cost", "type": "number"},
+        ]
+    )
+    spec = {
+        "schema_version": 1,
+        "chart": {"type": "bar"},
+        "transform_plan": {
+            "steps": [
+                {
+                    "op": "derive",
+                    "as": "gross",
+                    "left": {"field": "revenue"},
+                    "operator": "subtract",
+                    "right": {"field": "cost"},
+                },
+                {
+                    "op": "derive",
+                    "as": "margin",
+                    "left": {"field": "gross"},
+                    "operator": "divide",
+                    "right": {"field": "revenue"},
+                },
+                {"op": "binTime", "field": "date", "granularity": "month", "as": "month"},
+                {"op": "sort", "by": "month", "order": "asc"},
+            ]
+        },
+        "encodings": {
+            "x": {"field": "month", "value_type": "categorical"},
+            "y": {"field": "margin", "value_type": "numeric"},
+        },
+    }
+    assert validate_l2(spec, req) == []
+
+
+def test_l2_derive_on_string_column_rejected() -> None:
+    req = _req(
+        [
+            {"name": "region", "type": "string"},
+            {"name": "revenue", "type": "number"},
+        ]
+    )
+    spec = {
+        "schema_version": 1,
+        "chart": {"type": "bar"},
+        "transform_plan": {
+            "steps": [
+                {
+                    "op": "derive",
+                    "as": "x",
+                    "left": {"field": "region"},  # string → 不允许算术
+                    "operator": "add",
+                    "right": {"field": "revenue"},
+                }
+            ]
+        },
+        "encodings": {
+            "x": {"field": "region", "value_type": "categorical"},
+            "y": {"field": "revenue", "value_type": "numeric"},
+        },
+    }
+    errors = validate_l2(spec, req)
+    assert any("region" in e and "must be numeric" in e for e in errors)
+
+
+def test_l2_derive_unknown_operand_column_rejected() -> None:
+    req = _req([{"name": "revenue", "type": "number"}])
+    spec = {
+        "schema_version": 1,
+        "chart": {"type": "bar"},
+        "transform_plan": {
+            "steps": [
+                {
+                    "op": "derive",
+                    "as": "x",
+                    "left": {"field": "nope"},
+                    "operator": "add",
+                    "right": {"value": 1},
+                }
+            ]
+        },
+        "encodings": {"y": {"field": "revenue", "value_type": "numeric"}},
+    }
+    errors = validate_l2(spec, req)
+    assert any("nope" in e for e in errors)
+
+
+def test_l2_binTime_on_number_column_rejected() -> None:
+    req = _req(
+        [
+            {"name": "month", "type": "string"},
+            {"name": "revenue", "type": "number"},
+        ]
+    )
+    spec = {
+        "schema_version": 1,
+        "chart": {"type": "bar"},
+        "transform_plan": {
+            "steps": [
+                {"op": "binTime", "field": "revenue", "granularity": "month", "as": "m"}
+            ]
+        },
+        "encodings": {
+            "x": {"field": "month", "value_type": "categorical"},
+            "y": {"field": "revenue", "value_type": "numeric"},
+        },
+    }
+    errors = validate_l2(spec, req)
+    assert any("date or string" in e for e in errors)

@@ -43,6 +43,7 @@
 | D11 | 落地顺序 | **首版单库落地 Highcharts**（转换器先行实现），ECharts 作为后续里程碑（M5）；D5 中性 spec 保持库无关，Highcharts 方言只进转换器 |
 | D12 | Flint 定位（Spike 结论，2026-09，读源码验证） | 微软 Flint（MIT，0.5.x，TS 库）**不作服务端引擎**：汇编要求 `data.values` 在场（`core/types.ts`），且 flint-py 未发布、仅 Vega-Lite 后端。**可作消费端 SDK 内的汇编引擎**：M5 的 ECharts 后端候选 = SDK 内调 flint-js `assembleECharts`（数据先由我们的变换运行时预聚合再喂入，Flint 对预聚合表不做重复聚合，`vegalite/assemble.ts` 已注明）。Highcharts 无后端（现有：VL/ECharts/Chart.js/Plotly/Excel）→ 转换器自研（D11）。声明式 filter / min / max / median 等超出 Flint 输入面（encoding 级 aggregate 仅 count/sum/average/mean）→ 变换 DSL 自研 |
 | D13 | 转换器执行位置（2026-09 定） | **确定性转换器随 @chartbrain/sdk 以 TS 发布、在消费端本地执行**（与 D12 对称，双库一致）；server 只做 LLM + L1/L2 校验 + 返回 spec/变换计划（无状态、不见数据）；变换、转换、绑定、L3 冒烟等全部确定性步骤在 SDK 完成 |
+| D14 | 能力扩展（2026-09 定，分批） | **P1**：`binTime`（date 按月/季/年分桶）+ `derive`（**二元+常量**四则，复杂公式用两步 derive 链）；**P2**：`percent`（countPercent，分母按 SQL 窗口语义：global/filtered/group/partition[fields]）+ `growth`（环比 mom / 同比 yoy，按 time_field 有序、partition 分区；首期/无前值→**null**，不补 0）。占比/增长率数值一律存 **0~1**，`%` 格式化归消费端/SDK 显示层。表达式与窗口细节见 §4.4 |
 
 ---
 
@@ -148,6 +149,40 @@
 - **窄 spec / enum 优先 / 禁 anyOf 宽 union**：Chat2Vis 证明 LLM 直出配置/代码不稳定；Vega-Lite schema 校验通过 ≠ 可渲染（宽 schema 形同虚设）。→ 见 `research/nl-to-chart-spec-survey.md`。
 - **变换入 spec 一等公民**：chart-llm（CHI'24）证明 filter/aggregate/bin 应作为标注维度；这是相对 Flint 公开叙事可差异化的点。
 - **产物可序列化、可 diff、可版本化**：学 Evidence「一切皆文本」——spec + 变换计划是可审计工件。
+
+---
+
+## 4.4 扩展算子草案（D14，P1 实现中 / P2 规划）
+
+**P1：`derive`（二元+常量，复杂公式用两步链）与 `binTime`**
+
+```jsonc
+{ "op": "binTime", "field": "date", "granularity": "month", "as": "month" } // month|quarter|year
+
+// (revenue - cost) / revenue 需要两步：
+{ "op": "derive", "as": "gross", "left": { "field": "revenue" },
+  "operator": "subtract", "right": { "field": "cost" } }
+{ "op": "derive", "as": "margin", "left": { "field": "gross" },
+  "operator": "divide", "right": { "field": "revenue" } }
+```
+
+- operand = `{ "field": 列 }` 或 `{ "value": 数字常量 }`；operator ∈ add/subtract/multiply/divide；
+- derive/binTime **保留整表并新增一列**（不像 aggregate 会丢弃列）；derive 输出列一律 number；
+- 除零、缺失 operand → **null**（不抛错不臆造）；binTime 输出 `2026-01` / `2026-Q1` / `2026` 形式标签（string）。
+
+**P2（规划，语义待用例锁死）：`percent` 与 `growth`**
+
+```jsonc
+// 每个 region 内各 product 的数量占比（分母 = region 分区和，结果 0~1）
+{ "op": "percent", "field": "n", "denominator": { "partition": ["region"] }, "as": "region_pct" }
+
+// 环比（按月、按 region 各自比上期；首期→null）
+{ "op": "growth", "measure": "revenue", "time_field": "month",
+  "period": "mom", "partition": ["region"], "as": "mom_growth" }   // mom|yoy
+```
+
+- denominator 四口径（SQL 窗口语义）：`global`（整表）/ `filtered`（过滤后表）/ `group`（当前 group_by 分组）/ `partition[fields]`；
+- growth 的 L2 前置校验：时间列有序且每桶恰一行（聚合后无重复桶）；缺前值/缺期 → null。
 
 ---
 
@@ -261,6 +296,8 @@
 | M4 端到端 ✅（2026-09-05）| Node 消费端 demo（金融数据 48 行，**Highcharts**，`examples/highcharts-demo`） | 自然语言跑通「问 → 图」：bar/area 两种问题均出图 |
 | M4b 工程质量 ✅（2026-09-05）| GitHub Actions CI（server pytest + sdk typecheck/build/vitest）；LLM 超时/重试/错误分类（provider→503）/请求审计日志 | CI 绿；加固单测通过 |
 | M5 双库化 ✅（2026-09-05）| **ECharts 后端 = SDK 内 flint-js `assembleECharts`**（D12 兑现）+ `buildECharts`；`examples/dual-demo` 同 spec 双库并排渲染 | 同一 spec 双库输出一致：5 图型（SDK 22 passed）+ 双库渲染实测一致（bar/area） |
+| P1 能力扩展（进行中 2026-09，D14）| `binTime`（月/季/年分桶）+ `derive`（二元+常量四则，两步链） | schema/L2/提示词/SDK 算子/测试 + eval 扩样 |
+| P2 能力扩展（规划，D14）| `percent`（4 窗口口径）+ `growth`（mom/yoy，null 缺期） | 语义用例锁死 → 实现 → eval |
 | M6 扩展 | 更多图型、MCP 交付、自纠错回路、渲染比对回归评测 | 回归管线可跑 |
 
 ---

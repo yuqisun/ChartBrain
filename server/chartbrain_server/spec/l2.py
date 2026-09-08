@@ -23,7 +23,8 @@ _ALLOWED_AGGS = _NUMERIC_OUTPUT_AGGS
 _ALLOWED_FILTER_OPS = {
     "eq", "neq", "gt", "gte", "lt", "lte", "between", "in", "contains",
 }
-_KNOWN_OPS = {"filter", "aggregate", "sort", "limit"}
+_KNOWN_OPS = {"filter", "aggregate", "sort", "limit", "derive", "binTime"}
+_ARITH_OPS = {"add", "subtract", "multiply", "divide"}
 
 
 def validate_l2(spec: dict, req: ChartRequest) -> list[str]:
@@ -137,6 +138,67 @@ def validate_l2(spec: dict, req: ChartRequest) -> list[str]:
             n = step.get("n")
             if not isinstance(n, int) or isinstance(n, bool) or n < 1:
                 errors.append(f"L2: {where}: 'n' must be a positive integer")
+        elif op == "derive":
+            as_name = step.get("as")
+            operator = step.get("operator")
+            left = step.get("left")
+            right = step.get("right")
+            if operator not in _ARITH_OPS:
+                errors.append(
+                    f"L2: {where}: invalid operator '{operator}'"
+                    f" (allowed: {sorted(_ARITH_OPS)})"
+                )
+            for tag, operand in (("left", left), ("right", right)):
+                if not isinstance(operand, dict):
+                    errors.append(f"L2: {where}/{tag}: operand must be an object")
+                    continue
+                fld = operand.get("field")
+                if fld is not None:
+                    if not isinstance(fld, str) or not fld:
+                        errors.append(f"L2: {where}/{tag}: operand 'field' must be a string")
+                        continue
+                    if check_field(fld, where + "/" + tag) and fld in typed:
+                        if typed.get(fld) != "number":
+                            errors.append(
+                                f"L2: {where}/{tag}: arithmetic operand must be numeric;"
+                                f" column '{fld}' is {typed.get(fld)}"
+                            )
+                elif "value" in operand:
+                    v = operand.get("value")
+                    if isinstance(v, bool) or not isinstance(v, (int, float)):
+                        errors.append(
+                            f"L2: {where}/{tag}: constant 'value' must be a number"
+                        )
+                else:
+                    errors.append(
+                        f"L2: {where}/{tag}: operand must contain 'field' or 'value'"
+                    )
+            if not isinstance(as_name, str) or not as_name:
+                errors.append(f"L2: {where}: missing 'as' (output column)")
+            else:
+                typed[as_name] = "number"  # derive keeps the full table and adds a column
+        elif op == "binTime":
+            f = step.get("field")
+            gran = step.get("granularity")
+            as_name = step.get("as")
+            if isinstance(f, str) and f:
+                if check_field(f, where) and f in typed:
+                    if typed.get(f) not in ("date", "string"):
+                        errors.append(
+                            f"L2: {where}: binTime requires a date or string column;"
+                            f" '{f}' is {typed.get(f)}"
+                        )
+            else:
+                errors.append(f"L2: {where}: missing 'field'")
+            if gran not in ("month", "quarter", "year"):
+                errors.append(
+                    f"L2: {where}: invalid granularity '{gran}'"
+                    " (allowed: month|quarter|year)"
+                )
+            if not isinstance(as_name, str) or not as_name:
+                errors.append(f"L2: {where}: missing 'as'")
+            else:
+                typed[as_name] = "string"  # bucket label like 2026-01 / 2026-Q1 / 2026
 
     # encodings reference the final table
     for ch, encv in (spec.get("encodings") or {}).items():

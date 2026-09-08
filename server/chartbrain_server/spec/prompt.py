@@ -27,11 +27,17 @@ Output JSON shape (field details follow the schema description in the user messa
 Hard rules:
 1. chart.type must be one of: bar | line | pie | scatter | area.
 2. Any data processing must be expressed declaratively in transform_plan.steps, using ONLY these
-   operators: filter | aggregate | sort | limit. Use at most 3 steps.
+   operators: filter | aggregate | sort | limit | derive | binTime. Use at most 6 steps.
    - filter:    { "op":"filter", "field":"col", "operator":"eq|neq|gt|gte|lt|lte|between|in|contains", "value":..., "values":[...] }
    - aggregate: { "op":"aggregate", "group_by":["col",...], "measures":[{"field":"col","agg":"sum|avg|count|countDistinct|min|max","as":"newcol"}] }
    - sort:      { "op":"sort", "by":"col", "order":"asc|desc" }
    - limit:     { "op":"limit", "n":integer }
+   - derive:    { "op":"derive", "as":"newcol", "left":{...operand...}, "operator":"add|subtract|multiply|divide", "right":{...operand...} }
+                operand = { "field":"col" } or { "value": number }. Binary only: one operator per step.
+                For formulas like (revenue-cost)/revenue chain TWO derive steps (first compute the
+                difference, then divide it).
+   - binTime:   { "op":"binTime", "field":"datecol", "granularity":"month|quarter|year", "as":"newcol" }
+                Buckets date/string date columns into labels like "2026-01" / "2026-Q1" / "2026".
    For agg=count you may omit "field" (counts rows).
 3. Column lifecycle (most important; violations fail):
    - Step 1 input is the original columns from the request;
@@ -42,10 +48,12 @@ Hard rules:
    - To aggregate an already-aggregated numeric column again, it must still exist (kept by
      group_by or produced by an earlier step).
 4. sum/avg/min/max only on "number" columns; count/countDistinct work on any column.
-5. Capability boundary: only the operators and aggregate functions above are supported. If the
-   request needs derived expressions (percent/share, MoM/YoY, ratio, variance, differences etc.)
-   or anything inexpressible with these rules, output {"error":"explain why"} — NEVER invent
-   column names or force a wrong spec.
+5. Capability boundary: only the operators and aggregate functions above are supported, including
+   simple arithmetic (derive, binary op with fields/constants) and date bucketing (binTime).
+   Still NOT supported: percentage/share of a total, month-over-month or year-over-year growth,
+   window/rank functions, and any expression needing more than one binary operator per step
+   (chain multiple derive steps instead). If the request needs something inexpressible with these
+   rules, output {"error":"explain why"} — NEVER invent column names or force a wrong spec.
 6. If the request refers to a missing field or you cannot decide the chart type / axes with
    confidence, also output {"error":"explain"} instead of guessing.
 7. NEVER output any chart-library config (Highcharts/ECharts), code, or SQL.
@@ -128,6 +136,44 @@ def build_user_prompt(req: ChartRequest) -> str:
                     "encodings": {
                         "x": {"field": "month", "value_type": "categorical"},
                         "y": {"field": "monthly_revenue", "value_type": "numeric"},
+                    },
+                },
+            },
+            {
+                "query": "Show quarterly revenue trend",
+                "columns": [
+                    {"name": "date", "type": "date"},
+                    {"name": "region", "type": "string"},
+                    {"name": "revenue", "type": "number"},
+                ],
+                "chart_spec": {
+                    "schema_version": 1,
+                    "chart": {"type": "line", "title": "Quarterly revenue trend"},
+                    "transform_plan": {
+                        "steps": [
+                            {
+                                "op": "binTime",
+                                "field": "date",
+                                "granularity": "quarter",
+                                "as": "quarter",
+                            },
+                            {
+                                "op": "aggregate",
+                                "group_by": ["quarter"],
+                                "measures": [
+                                    {
+                                        "field": "revenue",
+                                        "agg": "sum",
+                                        "as": "quarterly_revenue",
+                                    }
+                                ],
+                            },
+                            {"op": "sort", "by": "quarter", "order": "asc"},
+                        ]
+                    },
+                    "encodings": {
+                        "x": {"field": "quarter", "value_type": "categorical"},
+                        "y": {"field": "quarterly_revenue", "value_type": "numeric"},
                     },
                 },
             },

@@ -7,6 +7,8 @@
 
 import type {
   AggregateStep,
+  BinTimeStep,
+  DeriveStep,
   FilterStep,
   LimitStep,
   Row,
@@ -143,6 +145,86 @@ function applyLimit(rows: Row[], step: LimitStep): Row[] {
   return rows.slice(0, step.n);
 }
 
+function toNullableNumber(v: unknown): number | null {
+  const n = typeof v === "number" ? v : Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+function applyDerive(rows: Row[], step: DeriveStep): Row[] {
+  return rows.map((row) => {
+    const out = { ...row };
+    const resolve = (operand: DeriveStep["left"]): number | null => {
+      const raw = operand.field != null ? row[operand.field] : operand.value;
+      return toNullableNumber(raw);
+    };
+    const l = resolve(step.left);
+    const r = resolve(step.right);
+    let value: number | null = null;
+    if (l !== null && r !== null) {
+      switch (step.operator) {
+        case "add":
+          value = l + r;
+          break;
+        case "subtract":
+          value = l - r;
+          break;
+        case "multiply":
+          value = l * r;
+          break;
+        case "divide":
+          value = r === 0 ? null : l / r; // 除零 → null（D14）
+          break;
+      }
+    }
+    out[step.as] = value;
+    return out;
+  });
+}
+
+function parseDate(v: unknown): { year: number; month: number } | null {
+  if (v == null) return null;
+  if (v instanceof Date && !Number.isNaN(v.getTime())) {
+    return { year: v.getUTCFullYear(), month: v.getUTCMonth() + 1 };
+  }
+  const s = String(v);
+  const m = /^(\d{4})-(\d{2})/.exec(s);
+  if (m) return { year: Number(m[1]), month: Number(m[2]) };
+  const d = new Date(s);
+  if (!Number.isNaN(d.getTime())) {
+    return { year: d.getUTCFullYear(), month: d.getUTCMonth() + 1 };
+  }
+  return null;
+}
+
+function bucketLabel(
+  g: BinTimeStep["granularity"],
+  year: number,
+  month: number,
+): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  switch (g) {
+    case "month":
+      return `${year}-${pad(month)}`;
+    case "quarter":
+      return `${year}-Q${Math.ceil(month / 3)}`;
+    case "year":
+      return String(year);
+    default:
+      return "";
+  }
+}
+
+function applyBinTime(rows: Row[], step: BinTimeStep): Row[] {
+  return rows.map((row) => {
+    const out = { ...row };
+    const parsed = parseDate(row[step.field]);
+    out[step.as] = parsed
+      ? bucketLabel(step.granularity, parsed.year, parsed.month)
+      : null;
+    return out;
+  });
+}
+
 /** 顺序执行变换计划：前一步输出是后一步输入。 */
 export function executeTransform(data: Row[], steps: TransformStep[]): Row[] {
   let rows = data;
@@ -159,6 +241,12 @@ export function executeTransform(data: Row[], steps: TransformStep[]): Row[] {
         break;
       case "limit":
         rows = applyLimit(rows, step);
+        break;
+      case "derive":
+        rows = applyDerive(rows, step);
+        break;
+      case "binTime":
+        rows = applyBinTime(rows, step);
         break;
       default:
         throw new Error(`Unsupported transform op: ${(step as TransformStep).op}`);

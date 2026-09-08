@@ -59,7 +59,38 @@ export interface LimitStep {
   n: number;
 }
 
-export type TransformStep = FilterStep | AggregateStep | SortStep | LimitStep;
+export type ArithOp = "add" | "subtract" | "multiply" | "divide";
+
+/** derive 的操作数：引用现有列或数字常量。 */
+export interface Operand {
+  field?: string;
+  value?: number;
+}
+
+export interface DeriveStep {
+  op: "derive";
+  as: string;
+  left: Operand;
+  operator: ArithOp;
+  right: Operand;
+}
+
+export type TimeGranularity = "month" | "quarter" | "year";
+
+export interface BinTimeStep {
+  op: "binTime";
+  field: string;
+  granularity: TimeGranularity;
+  as: string;
+}
+
+export type TransformStep =
+  | FilterStep
+  | AggregateStep
+  | SortStep
+  | LimitStep
+  | DeriveStep
+  | BinTimeStep;
 
 export interface ChartSpec {
   schema_version: number;

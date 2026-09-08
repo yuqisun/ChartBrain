@@ -61,7 +61,9 @@
         { "$ref": "#/$defs/op_filter" },
         { "$ref": "#/$defs/op_aggregate" },
         { "$ref": "#/$defs/op_sort" },
-        { "$ref": "#/$defs/op_limit" }
+        { "$ref": "#/$defs/op_limit" },
+        { "$ref": "#/$defs/op_derive" },
+        { "$ref": "#/$defs/op_binTime" }
       ]
     },
     "scalar_or_list": {
@@ -135,6 +137,46 @@
       "properties": {
         "op": { "const": "limit" },
         "n": { "type": "integer", "minimum": 1, "maximum": 100000 }
+      }
+    },
+    "operand": {
+      "description": "derive 的操作数：引用现有列或数字常量。",
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["field"],
+          "properties": { "field": { "type": "string", "minLength": 1 } }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["value"],
+          "properties": { "value": { "type": "number" } }
+        }
+      ]
+    },
+    "op_derive": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["op", "as", "left", "operator", "right"],
+      "properties": {
+        "op": { "const": "derive" },
+        "as": { "type": "string", "minLength": 1, "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" },
+        "left": { "$ref": "#/$defs/operand" },
+        "operator": { "enum": ["add", "subtract", "multiply", "divide"] },
+        "right": { "$ref": "#/$defs/operand" }
+      }
+    },
+    "op_binTime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["op", "field", "granularity", "as"],
+      "properties": {
+        "op": { "const": "binTime" },
+        "field": { "type": "string", "minLength": 1 },
+        "granularity": { "enum": ["month", "quarter", "year"] },
+        "as": { "type": "string", "minLength": 1, "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" }
       }
     }
   }

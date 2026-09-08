@@ -132,3 +132,71 @@ describe("unknown op", () => {
     ).toThrowError(/Unsupported transform op/);
   });
 });
+
+describe("derive / binTime (P1, D14)", () => {
+  it("derive: 两步链 subtract + multiply(常量)", () => {
+    const rows = executeTransform(
+      [{ revenue: 100, cost: 40 }],
+      [
+        { op: "derive", as: "gross", left: { field: "revenue" }, operator: "subtract", right: { field: "cost" } },
+        { op: "derive", as: "after_tax", left: { field: "gross" }, operator: "multiply", right: { value: 0.9 } },
+      ],
+    );
+    expect(rows).toEqual([{ revenue: 100, cost: 40, gross: 60, after_tax: 54 }]);
+  });
+
+  it("derive: divide + 除零 → null", () => {
+    const rows = executeTransform(
+      [
+        { a: 10, b: 4 },
+        { a: 10, b: 0 },
+      ],
+      [{ op: "derive", as: "r", left: { field: "a" }, operator: "divide", right: { field: "b" } }],
+    );
+    expect(rows).toEqual([
+      { a: 10, b: 4, r: 2.5 },
+      { a: 10, b: 0, r: null },
+    ]);
+  });
+
+  it("derive: 缺失 operand → null（不抛错）", () => {
+    const rows = executeTransform(
+      [{ a: 5 }],
+      [
+        {
+          op: "derive",
+          as: "r",
+          left: { field: "a" },
+          operator: "add",
+          right: { field: "missing" },
+        },
+      ],
+    );
+    expect(rows[0].r).toBeNull();
+  });
+
+  it("binTime: month/quarter/year 标签 + 坏日期 → null", () => {
+    const rows = executeTransform(
+      [{ d: "2026-01-15" }, { d: "2026-04-02" }, { d: "2026-12-01" }, { d: "not-a-date" }],
+      [
+        { op: "binTime", field: "d", granularity: "month", as: "m" },
+        { op: "binTime", field: "d", granularity: "quarter", as: "q" },
+        { op: "binTime", field: "d", granularity: "year", as: "y" },
+      ],
+    );
+    expect(rows.map((r) => [r.m, r.q, r.y])).toEqual([
+      ["2026-01", "2026-Q1", "2026"],
+      ["2026-04", "2026-Q2", "2026"],
+      ["2026-12", "2026-Q4", "2026"],
+      [null, null, null],
+    ]);
+  });
+
+  it("binTime: 保留整表并新增列", () => {
+    const rows = executeTransform(
+      [{ revenue: 10, d: "2025-11-03" }],
+      [{ op: "binTime", field: "d", granularity: "month", as: "m" }],
+    );
+    expect(rows).toEqual([{ revenue: 10, d: "2025-11-03", m: "2025-11" }]);
+  });
+});
