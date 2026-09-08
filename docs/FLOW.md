@@ -9,43 +9,41 @@
 sequenceDiagram
     autonumber
     participant U as 用户
-    participant FE as 消费端前端<br/>(React + Highcharts/ECharts)
-    participant BE as 消费端后端<br/>(业务服务, 持有全量数据)
-    participant SDK as @chartbrain/sdk<br/>(本地确定性执行层)
-    participant CB as chartbrain-server<br/>(无状态意图层)
-    participant LLM as LLM Provider<br/>(DeepSeek 等, OpenAI 兼容)
+    participant FE as 消费端前端<br/>React 与 Highcharts 或 ECharts
+    participant BE as 消费端后端<br/>业务服务 持有全量数据
+    participant SDK as chartbrain-sdk<br/>本地确定性执行层
+    participant CB as chartbrain-server<br/>无状态意图层
+    participant LLM as LLM Provider<br/>DeepSeek 等 OpenAI 兼容
 
     U->>FE: ① 输入自然语言问题
-    FE->>BE: ② 请求图表(question)
+    FE->>BE: ② 请求图表
 
-    Note over BE: ③ 消费端需准备: columns(列schema) + data_sample(≤N行样例) + 可选 constraints(白名单)
+    Note over BE: ③ 消费端需准备 columns 与 data_sample 与可选 constraints
 
-    BE->>CB: ④ POST /v1/charts {query, library, columns, data_sample, constraints}
-    CB->>LLM: ⑤ 受控上下文(规则+few-shot) + json_mode
-    LLM-->>CB: ⑥ 中性 spec + transform_plan
-    CB->>CB: ⑦ L1 JSON Schema → L2 字段/类型/白名单 → (单轮修复)
+    BE->>CB: ④ POST /v1/charts 发送 query library columns data_sample
+    CB->>LLM: ⑤ 受控上下文与 few-shot 并启用 JSON 模式
+    LLM-->>CB: ⑥ 返回中性 spec 与 transform_plan
+    CB->>CB: ⑦ 执行 L1 与 L2 校验并做单轮修复
 
-    alt 需要澄清 / L1·L2 未过
-        CB-->>BE: 422 {error_kind: clarification|validation, errors, request_id}
-        BE-->>FE: 返回澄清/错误
-        FE-->>U: 展示文案, 引导改述
-    else Provider 故障(网络/认证/超时/5xx)
-        CB-->>BE: 503 {error_kind: provider, request_id}
+    alt 需要澄清或校验未通过
+        CB-->>BE: 422 携带 error_kind 与 errors 与 request_id
+        BE-->>FE: 返回澄清或错误
+        FE-->>U: 展示文案并引导用户改述
+    else Provider 发生故障
+        CB-->>BE: 503 携带 error_kind provider 与 request_id
         BE-->>FE: 服务暂不可用
-        FE-->>U: 稍后重试
+        FE-->>U: 提示稍后重试
     else 成功
-        CB-->>BE: ⑧ 200 {chart_spec, request_id, warnings}  (不返回库配置, D13)
-        BE->>SDK: ⑨ buildHighcharts(全量data, chart_spec) 或 buildECharts(...)
-        Note over SDK: ⑩ ①executeTransform: filter/aggregate/sort/limit/derive/binTime(本地全量)
-        Note over SDK:    ②确定性转换: →Highcharts option(自研) / →ECharts(经 flint-js)
-        Note over SDK:    ③数据绑定: 计算结果写入 series → 得到可直接渲染的 option
-        SDK-->>BE: ⑪ Highcharts.Options / ECharts option
-        BE-->>FE: ⑫ option(不含全量数据)
-        FE->>FE: ⑬ Highcharts.chart('container', option) 或 echarts.setOption(option)
-        FE-->>U: ⑭ 图表展示; 用户可追问(未来多轮修改)
+        CB-->>BE: ⑧ 返回 200 含 chart_spec 与 request_id 与 warnings
+        BE->>SDK: ⑨ 调用 buildHighcharts 或 buildECharts
+        Note over SDK: ⑩ 在本地依次执行变换 转换 与数据绑定
+        SDK-->>BE: ⑪ 返回可直接渲染的图表配置
+        BE-->>FE: ⑫ 下发图表配置
+        FE->>FE: ⑬ 交给 Highcharts 或 ECharts 渲染
+        FE-->>U: ⑭ 展示图表并可继续追问
     end
 
-    Note over U,SDK: 红线: 全量业务数据只在消费端; 网络仅传输 columns+样例+中性 spec
+    Note over U,SDK: 全量数据只在消费端 网络仅传输 schema 样例与中性 spec
 ```
 
 ## 二、步骤 ↔ 代码对照
