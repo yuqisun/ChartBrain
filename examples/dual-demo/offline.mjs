@@ -87,6 +87,104 @@ const CASES = [
       },
     },
   },
+  {
+    label: "Grouped Bar — monthly revenue by region (side by side)",
+    spec: {
+      schema_version: 1,
+      chart: { type: "groupedBar", title: "Monthly revenue by region" },
+      transform_plan: {
+        steps: [{
+          op: "aggregate",
+          group_by: ["month", "region"],
+          measures: [{ field: "revenue", agg: "sum", as: "monthly_revenue" }],
+        }],
+      },
+      encodings: {
+        x: { field: "month", value_type: "temporal" },
+        y: { field: "monthly_revenue", value_type: "numeric" },
+        series: SERIES,
+      },
+    },
+  },
+  {
+    label: "Stacked Bar — monthly revenue composition",
+    spec: {
+      schema_version: 1,
+      chart: { type: "stackedBar", title: "Revenue composition by region" },
+      transform_plan: {
+        steps: [{
+          op: "aggregate",
+          group_by: ["month", "region"],
+          measures: [{ field: "revenue", agg: "sum", as: "monthly_revenue" }],
+        }],
+      },
+      encodings: {
+        x: { field: "month", value_type: "temporal" },
+        y: { field: "monthly_revenue", value_type: "numeric" },
+        series: SERIES,
+      },
+    },
+  },
+  {
+    label: "Donut — revenue share by region",
+    spec: {
+      schema_version: 1,
+      chart: { type: "donut", title: "Revenue share by region" },
+      transform_plan: {
+        steps: [{
+          op: "aggregate",
+          group_by: ["region"],
+          measures: [{ field: "revenue", agg: "sum", as: "region_revenue" }],
+        }],
+      },
+      encodings: {
+        x: { field: "region", value_type: "categorical" },
+        y: { field: "region_revenue", value_type: "numeric" },
+      },
+    },
+  },
+  {
+    label: "Slope — revenue shift across two half-years",
+    spec: {
+      schema_version: 1,
+      chart: { type: "slope", title: "Revenue shift by region" },
+      transform_plan: {
+        steps: [{
+          op: "aggregate",
+          group_by: ["month", "region"],
+          measures: [{ field: "revenue", agg: "sum", as: "monthly_revenue" }],
+        }],
+      },
+      encodings: {
+        x: { field: "month", value_type: "temporal" },
+        y: { field: "monthly_revenue", value_type: "numeric" },
+        series: SERIES,
+      },
+    },
+  },
+  {
+    label: "Connected Scatter — orders vs revenue path",
+    spec: {
+      schema_version: 1,
+      chart: { type: "connectedScatter", title: "Orders vs revenue path" },
+      encodings: {
+        x: { field: "orders", value_type: "numeric" },
+        y: { field: "revenue", value_type: "numeric" },
+        series: SERIES,
+      },
+    },
+  },
+  {
+    label: "Strip — revenue spread by region",
+    spec: {
+      schema_version: 1,
+      chart: { type: "strip", title: "Revenue spread by region" },
+      encodings: {
+        x: { field: "region", value_type: "categorical" },
+        y: { field: "revenue", value_type: "numeric" },
+      },
+    },
+  },
 ];
 
 const pad = (s, n) => String(s).padEnd(n);
@@ -156,6 +254,14 @@ const echartsTag = libTag(
     "https://registry.npmmirror.com/echarts/5.6.0/files/dist/echarts.min.js",
   ],
 );
+
+function escapeHtml(s) {
+  return String(s)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
+}
 
 function writeHtml() {
   const rowsHtml = rendered

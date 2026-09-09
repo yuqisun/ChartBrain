@@ -168,6 +168,19 @@ UX 建议：输入框 + 常用问题建议（见 `examples/dual-demo/QUESTIONS.m
 > ⚠️ **行为变更**：temporal x 现在是 `datetime` 轴（此前手写转换器用分类轴 + `categories`）。
 > 若你依赖 `xAxis.categories`，请改为读 `series[].data` 的 `[x, y]` 点对。
 
+### Highcharts 模块对照表（B1 图型）
+
+| 图型 | 需加载的模块 |
+|---|---|
+| groupedBar / stackedBar / donut / slope / connectedScatter / strip | 无（核心包即可） |
+| lollipop（B2） | `highcharts/modules/lollipop.js` |
+| waterfall / boxplot / gauge（B2） | `highcharts/highcharts-more.js` |
+| funnel / pyramid（B2） | `highcharts/modules/funnel.js` |
+| streamgraph（B2） | `highcharts/modules/streamgraph.js` |
+| rose（B2） | `highcharts/modules/variable-pie.js` |
+| radar（B2） | `highcharts/highcharts-more.js` |
+| histogram（B3） | 无需模块（后端分箱）或 `highcharts/modules/histogram-bellcurve.js` |
+
 ## 参考
 
 - 现成可跑示例：`examples/highcharts-demo`（单库）、`examples/dual-demo`（同 spec 双库，`offline.mjs` 为离线版）
