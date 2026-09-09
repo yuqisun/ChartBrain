@@ -109,8 +109,41 @@ const CASES = [
   { label: 'Scatter Plot', input: inp('Scatter Plot', { x: { field: 'weight' }, y: { field: 'mpg' }, color: { field: 'origin' } }, SCAT_BASE), hc: 'scatter', ec: 'scatter' },
   { label: 'Pie Chart', input: inp('Pie Chart', { color: { field: 'region' }, size: { field: 'revenue' } }), hc: 'pie', ec: 'pie' },
   // B1 新增
-  { label: 'Grouped Bar Chart', input: inp('Grouped Bar Chart', { x: { field: 'month' }, y: { field: 'revenue' }, group: { field: 'region' } }), hc: 'column', ec: 'bar' },
-  { label: 'Stacked Bar Chart', input: inp('Stacked Bar Chart', { x: { field: 'month' }, y: { field: 'revenue' }, color: { field: 'region' } }), hc: 'column', ec: 'bar' },
+  {
+    label: 'Grouped Bar Chart',
+    input: inp('Grouped Bar Chart', { x: { field: 'month' }, y: { field: 'revenue' }, group: { field: 'region' } }),
+    hc: 'column', ec: 'bar',
+    // 分组语义：两端都不得堆叠，且系列数一致（并排 = 一列一个分组系列）
+    check(hc, ec) {
+      const hcStacking = hc.plotOptions?.series?.stacking;
+      if (hcStacking !== undefined) {
+        throw new Error(`HC grouped bar plotOptions.series.stacking=${JSON.stringify(hcStacking)}，应为 undefined（并排不堆叠）`);
+      }
+      const ecStack = ec.series?.[0]?.stack;
+      if (ecStack !== undefined) {
+        throw new Error(`EC grouped bar series[0].stack=${JSON.stringify(ecStack)}，应为 undefined（并排不堆叠）`);
+      }
+      const hcN = (hc.series ?? []).length;
+      const ecN = (ec.series ?? []).length;
+      if (hcN !== ecN) throw new Error(`系列数 ${hcN} ≠ ${ecN}（grouped bar 两端应逐组对齐）`);
+    },
+  },
+  {
+    label: 'Stacked Bar Chart',
+    input: inp('Stacked Bar Chart', { x: { field: 'month' }, y: { field: 'revenue' }, color: { field: 'region' } }),
+    hc: 'column', ec: 'bar',
+    // 堆叠语义：HC 用 plotOptions.series.stacking='normal'，EC 用 series[].stack='total'
+    check(hc, ec) {
+      const hcStacking = hc.plotOptions?.series?.stacking;
+      if (hcStacking !== 'normal') {
+        throw new Error(`HC stacked bar plotOptions.series.stacking=${JSON.stringify(hcStacking)}，应为 'normal'`);
+      }
+      const ecStack = ec.series?.[0]?.stack;
+      if (ecStack !== 'total') {
+        throw new Error(`EC stacked bar series[0].stack=${JSON.stringify(ecStack)}，应为 'total'`);
+      }
+    },
+  },
   {
     label: 'Donut Chart',
     input: inp('Donut Chart', { color: { field: 'region' }, size: { field: 'revenue' } }),
