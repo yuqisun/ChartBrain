@@ -5,10 +5,10 @@ import { describe, it, expect } from 'vitest';
 import { assembleHighcharts, hcAllTemplateDefs, hcGetTemplateDef } from '../src';
 
 const CATEGORICAL_DATA = [
-  { month: '2026-01', period: 'before', region: 'East', revenue: 120 },
-  { month: '2026-02', period: 'after', region: 'East', revenue: 150 },
-  { month: '2026-01', period: 'before', region: 'West', revenue: 90 },
-  { month: '2026-02', period: 'after', region: 'West', revenue: 110 },
+  { month: '2026-01', region: 'East', revenue: 120 },
+  { month: '2026-02', region: 'East', revenue: 150 },
+  { month: '2026-01', region: 'West', revenue: 90 },
+  { month: '2026-02', region: 'West', revenue: 110 },
 ];
 
 const SCATTER_DATA = [
@@ -19,14 +19,14 @@ const SCATTER_DATA = [
 
 const CATEGORICAL_BASE = {
   data: { values: CATEGORICAL_DATA },
-  semantic_types: { month: 'YearMonth', period: 'Category', region: 'Country', revenue: 'Price' },
+  semantic_types: { month: 'YearMonth', region: 'Country', revenue: 'Price' },
 };
 
 describe('highcharts backend smoke', () => {
   it('registers the ChartBrain chart types', () => {
     const names = hcAllTemplateDefs.map(t => t.chart);
     expect(names).toEqual(
-      expect.arrayContaining(['Bar Chart', 'Line Chart', 'Area Chart', 'Scatter Plot', 'Pie Chart']),
+      expect.arrayContaining(['Bar Chart', 'Line Chart', 'Area Chart', 'Scatter Plot', 'Pie Chart', 'Donut Chart', 'Slope Chart']),
     );
     expect(hcGetTemplateDef('Bar Chart')).toBeDefined();
     expect(hcGetTemplateDef('Nonexistent Chart')).toBeUndefined();
@@ -91,7 +91,15 @@ describe('highcharts backend smoke', () => {
 
   it('Slope Chart → one line per entity across two periods', () => {
     const option = assembleHighcharts({
-      ...CATEGORICAL_BASE,
+      data: {
+        values: [
+          { period: 'before', region: 'East', revenue: 120 },
+          { period: 'after', region: 'East', revenue: 150 },
+          { period: 'before', region: 'West', revenue: 90 },
+          { period: 'after', region: 'West', revenue: 110 },
+        ],
+      },
+      semantic_types: { period: 'Category', region: 'Country', revenue: 'Price' },
       chart_spec: {
         chartType: 'Slope Chart',
         encodings: { x: { field: 'period' }, y: { field: 'revenue' }, color: { field: 'region' } },
@@ -99,9 +107,10 @@ describe('highcharts backend smoke', () => {
     }) as any;
 
     expect(option.chart.type).toBe('line');
-    expect(option.series).toHaveLength(2);
-    expect(option.series[0].data).toHaveLength(2);
-    expect(option.series[0].marker.enabled).toBe(true);
+    expect(option.series.map((s: any) => s.name)).toEqual(['East', 'West']);
+    expect(option.series[0].data).toEqual([120, 150]);
+    expect(option.series[1].data).toEqual([90, 110]);
+    expect(option.series.every((s: any) => s.marker?.enabled === true)).toBe(true);
   });
 
   it('Scatter Plot → [x, y] pairs on linear axes, one series per group', () => {
