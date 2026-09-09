@@ -1,0 +1,32 @@
+// Copyright (c) 2026 ChartBrain contributors.
+// Licensed under the MIT License.
+//
+// Highcharts template registry.
+
+import { ChartTemplateDef } from '../../core/types';
+import { hcBarChartDef } from './bar';
+import { hcLineChartDef } from './line';
+import { hcAreaChartDef } from './area';
+import { hcScatterPlotDef } from './scatter';
+import { hcPieChartDef } from './pie';
+
+/** Highcharts chart template definitions, grouped by category. */
+export const hcTemplateDefs: { [key: string]: ChartTemplateDef[] } = {
+    'Scatter & Point': [hcScatterPlotDef],
+    'Bar':             [hcBarChartDef],
+    'Line & Area':     [hcLineChartDef, hcAreaChartDef],
+    'Part-to-Whole':   [hcPieChartDef],
+};
+
+/** Flat list of all Highcharts chart template definitions. */
+export const hcAllTemplateDefs: ChartTemplateDef[] = Object.values(hcTemplateDefs).flat();
+
+/** Look up a Highcharts chart template definition by chart type name. */
+export function hcGetTemplateDef(chartType: string): ChartTemplateDef | undefined {
+    return hcAllTemplateDefs.find(t => t.chart === chartType);
+}
+
+/** Get the available channels for a Highcharts chart type. */
+export function hcGetTemplateChannels(chartType: string): string[] {
+    return hcGetTemplateDef(chartType)?.channels || [];
+}

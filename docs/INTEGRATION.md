@@ -149,8 +149,28 @@ UX 建议：输入框 + 常用问题建议（见 `examples/dual-demo/QUESTIONS.m
 - **成本？** 每次查询 = 1 次 LLM 调用（+1 次失败修复调用）。server 已内置超时/重试与错误分类。
 - **多轮改图？** 当前一次一问一图；多轮会话（"把柱状图换成折线"）属路线图前瞻项。
 
+## 附录 C · `buildHighcharts` 输出结构（消费端可依赖的契约）
+
+自 D15 起 Highcharts 配置由 vendored flint-js 编译器产出（不再是手写映射）。稳定部分：
+
+| 键 | 含义 |
+|---|---|
+| `chart.type` | `column` / `bar` / `line` / `area` / `scatter` / `pie`（`bar` = 水平柱） |
+| `chart.width` / `chart.height` | 布局决策推导的画布尺寸（含标题/图例/轴标题留白） |
+| `title.text` | 来自中性 spec 的 `chart.title`；`title.style.fontSize` 由布局决定 |
+| `xAxis` / `yAxis` | 分类轴带 `categories`；时间轴 `type: 'datetime'`（数据为 `[epochMs, y]` 点对）；数值轴 `type: 'linear'` |
+| `yAxis.min` | 仅在「要求零基线且无负值」时设为 0；有负值时交给 Highcharts |
+| `series[]` | `type` 与 `chart.type` 一致；`data` 为数值数组（分类轴）或 `[x, y]` 点对（数值/时间轴）；多系列带 `name` / `color` |
+| `series[].pointWidth` | 柱状图像素宽度（step × (1 − padding) 推导） |
+| `tooltip` / `legend` / `colors` | 由布局与配色决策填充 |
+| `_warnings` | 溢出截断等提示 `{severity, code, message, channel?, field?}`，可直接展示 |
+
+> ⚠️ **行为变更**：temporal x 现在是 `datetime` 轴（此前手写转换器用分类轴 + `categories`）。
+> 若你依赖 `xAxis.categories`，请改为读 `series[].data` 的 `[x, y]` 点对。
+
 ## 参考
 
-- 现成可跑示例：`examples/highcharts-demo`（单库）、`examples/dual-demo`（同 spec 双库）
-- 架构与决策：`docs/design.md`（D1–D13）、`specs/chart-spec.schema.json`
+- 现成可跑示例：`examples/highcharts-demo`（单库）、`examples/dual-demo`（同 spec 双库，`offline.mjs` 为离线版）
+- 架构与决策：`docs/design.md`（D1–D15）、`specs/chart-spec.schema.json`
+- Highcharts 后端实现与限制：`vendor/flint-chart/packages/flint-js/src/highcharts/README.md`、`vendor/flint-chart/FORK.md`
 - 数据契约字段说明见 `docs/design.md` §4/§6

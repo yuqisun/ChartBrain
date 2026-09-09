@@ -74,8 +74,11 @@ describe("toECharts (flint-js) spike", () => {
   });
 
   it("pie", () => {
-    const opt = buildECharts(sales, plainSpec("pie", "region", "revenue"));
+    const opt = buildECharts(sales, plainSpec("pie", "region", "revenue")) as any;
     expect(seriesType(opt)).toBe("pie");
+    // 中性 spec 的 x=分类 / y=数值 必须映射到饼图的 color / size，否则扇区为空
+    expect(opt.series[0].data?.length).toBeGreaterThan(0);
+    expect(opt.series[0].data[0]).toMatchObject({ name: "华东" });
   });
 
   it("scatter", () => {

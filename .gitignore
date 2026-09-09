@@ -36,3 +36,9 @@ Thumbs.db
 eval_report.json
 chart-output.html
 dual-chart.html
+dual-offline.html
+
+# Vendored flint-js: install lock intentionally not committed — upstream has no
+# lock in that directory, and a committed lock would pin whichever registry it
+# was generated against (see vendor/flint-chart/FORK.md).
+vendor/flint-chart/packages/flint-js/package-lock.json

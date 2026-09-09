@@ -1,147 +1,89 @@
 /**
- * Highcharts 确定性转换器（D6/D13，库知识所在）。
+ * Highcharts 后端（D11/D13）——由 fork 的 flint-js `assembleHighcharts` 编译。
  *
- * 输入：变换后的最终表（encodings 引用的列已存在）+ 中性 spec；
- * 输出：可直接交给 Highcharts 渲染的 option 对象（结构与 Highcharts.Options 兼容）。
+ * 我们的变换运行时已产出「最终表」；这里把最终表 + 中性 spec 映射为 Flint 的
+ * ChartAssemblyInput，交给 flint-chart 编译成 Highcharts options。
  *
- * MVP 覆盖：bar/line/pie/scatter/area，x 为分类轴（bar/line/area）、可选 series 分组。
+ * 映射：
+ * - chart.type → Flint chartType（bar/line/area/scatter/pie 五种白名单）
+ * - encodings.x/y → x/y；encodings.series → color（系列拆分）
+ * - pie 例外：中性 spec 用 x=分类、y=数值，而 Flint 的饼图模板读 color=分类、size=数值
+ * - 数据直接 inline（Flint 需要 data.values 在场，D12 决定如此）
+ * - 未传 semantic_types，由 Flint 从数据推断（后续可细化）
  */
 
-import type { ChartSpec, EncodingSpec, Row } from "../types.js";
+import { assembleHighcharts } from "flint-chart";
 
-export interface HighchartsSeries {
-  name: string;
-  data: Array<number | Array<string | number> | { name: string; y: number }>;
-  type?: string;
-}
+import type { ChartSpec, ChartType, Row } from "../types.js";
 
-export interface HighchartsOption {
-  chart: { type: string };
-  title: { text: string };
-  xAxis?: { categories?: string[]; title?: { text: string } };
-  yAxis?: { title: { text: string } };
-  series: HighchartsSeries[];
-}
-
-const TYPE_MAP: Record<string, string> = {
-  bar: "column",
-  line: "line",
-  pie: "pie",
-  scatter: "scatter",
-  area: "area",
+const FLINT_CHART_TYPE: Record<ChartType, string> = {
+  bar: "Bar Chart",
+  line: "Line Chart",
+  pie: "Pie Chart",
+  scatter: "Scatter Plot",
+  area: "Area Chart",
 };
 
-function toNumber(v: unknown): number {
-  const n = Number(v);
-  return Number.isFinite(n) ? n : 0;
+export interface HighchartsSeries {
+  name?: string;
+  type?: string;
+  data: unknown[];
+  color?: string;
+  pointWidth?: number;
+  [key: string]: unknown;
 }
 
-function label(v: unknown): string {
-  return String(v ?? "");
+export interface HighchartsAxis {
+  type?: string;
+  categories?: string[];
+  title?: { text?: string; [key: string]: unknown };
+  labels?: Record<string, unknown>;
+  min?: number;
+  max?: number;
+  [key: string]: unknown;
 }
 
-function firstSeen(rows: Row[], field: string): string[] {
-  const out: string[] = [];
-  const seen = new Set<string>();
-  for (const row of rows) {
-    const k = label(row[field]);
-    if (!seen.has(k)) {
-      seen.add(k);
-      out.push(k);
-    }
-  }
-  return out;
+/** Highcharts options 的最小结构（完整形状由 Flint 决定，这里是给消费端的类型提示）。 */
+export interface HighchartsOption {
+  chart: { type: string; width?: number; height?: number; [key: string]: unknown };
+  title?: { text?: string; style?: Record<string, unknown>; [key: string]: unknown };
+  xAxis?: HighchartsAxis;
+  yAxis?: HighchartsAxis;
+  series: HighchartsSeries[];
+  tooltip?: Record<string, unknown>;
+  legend?: Record<string, unknown>;
+  /** 溢出截断等提示，可直接展示给用户。 */
+  _warnings?: Array<{ severity: string; code: string; message: string; channel?: string; field?: string }>;
+  [key: string]: unknown;
 }
 
-function groupRows(rows: Row[], field: string): Map<string, Row[]> {
-  const map = new Map<string, Row[]>();
-  for (const row of rows) {
-    const k = label(row[field]);
-    if (!map.has(k)) map.set(k, []);
-    map.get(k)!.push(row);
-  }
-  return map;
-}
+type FlintInput = Parameters<typeof assembleHighcharts>[0];
 
+/** 中性 spec + 变换后的最终表 → Highcharts options。 */
 export function toHighcharts(data: Row[], spec: ChartSpec): HighchartsOption {
-  const { chart, encodings } = spec;
-  const type = TYPE_MAP[chart.type] ?? "column";
-  const title = chart.title ?? "";
-  const x = encodings.x as EncodingSpec | undefined;
-  const y = encodings.y as EncodingSpec | undefined;
-  const seriesEnc = encodings.series as EncodingSpec | undefined;
+  const encodings: Record<string, { field: string }> = {};
+  const x = spec.encodings.x;
+  const y = spec.encodings.y;
+  const s = spec.encodings.series;
 
-  if (chart.type === "pie") {
-    const name = y?.field ?? "value";
-    return {
-      chart: { type },
-      title: { text: title },
-      series: [
-        {
-          type: "pie",
-          name,
-          data: data.map((r) => ({
-            name: x ? label(r[x.field]) : "",
-            y: y ? toNumber(r[y.field]) : 0,
-          })),
-        },
-      ],
-    };
+  if (spec.chart.type === "pie") {
+    if (x) encodings.color = { field: x.field };
+    if (y) encodings.size = { field: y.field };
+  } else {
+    if (x) encodings.x = { field: x.field };
+    if (y) encodings.y = { field: y.field };
+    if (s) encodings.color = { field: s.field };
   }
 
-  if (chart.type === "scatter") {
-    const name = seriesEnc?.field ?? (title || (y?.field ?? ""));
-    return {
-      chart: { type },
-      title: { text: title },
-      xAxis: { title: { text: x?.field ?? "" } },
-      yAxis: { title: { text: y?.field ?? "" } },
-      series: [
-        {
-          name,
-          data: data.map((r) => [
-            x ? toNumber(r[x.field]) : 0,
-            y ? toNumber(r[y.field]) : 0,
-          ]),
-        },
-      ],
-    };
-  }
+  const input: FlintInput = {
+    data: { values: data },
+    chart_spec: {
+      chartType: FLINT_CHART_TYPE[spec.chart.type],
+      title: spec.chart.title ?? "",
+      encodings,
+      baseSize: { width: 640, height: 400 },
+    },
+  } as FlintInput;
 
-  // bar / line / area：分类 x + 数值 y（可选 series 拆多系列）
-  const categories = x ? firstSeen(data, x.field) : [];
-  if (seriesEnc) {
-    const seriesOut: HighchartsSeries[] = [];
-    const groups = groupRows(data, seriesEnc.field);
-    for (const [name, rows] of groups) {
-      const perCat = new Map<string, number>();
-      for (const row of rows) {
-        perCat.set(x ? label(row[x.field]) : "", y ? toNumber(row[y.field]) : 0);
-      }
-      seriesOut.push({
-        name,
-        data: categories.map((c) => perCat.get(c) ?? 0),
-      });
-    }
-    return {
-      chart: { type },
-      title: { text: title },
-      xAxis: { categories, title: { text: x?.field ?? "" } },
-      yAxis: { title: { text: y?.field ?? "" } },
-      series: seriesOut,
-    };
-  }
-
-  return {
-    chart: { type },
-    title: { text: title },
-    xAxis: { categories, title: { text: x?.field ?? "" } },
-    yAxis: { title: { text: y?.field ?? "" } },
-    series: [
-      {
-        name: title || (y?.field ?? ""),
-        data: data.map((r) => (y ? toNumber(r[y.field]) : 0)),
-      },
-    ],
-  };
+  return assembleHighcharts(input) as HighchartsOption;
 }

@@ -60,7 +60,8 @@ function writeHtml(query, option) {
 <head>
 <meta charset="utf-8" />
 <title>ChartBrain Demo — ${escapeHtml(query)}</title>
-<script src="https://code.highcharts.com/highcharts.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highcharts@12/highcharts.js"></script>
+<script>if (!window.Highcharts) { document.write('<script src="https://registry.npmmirror.com/highcharts/12.6.0/files/highcharts.js"><\\/script>'); }</script>
 <script>if (!window.Highcharts) { document.write('<script src="./node_modules/highcharts/highcharts.js"><\\/script>'); }</script>
 <style>body{font-family:system-ui;margin:24px} #container{max-width:900px;min-height:480px}</style>
 </head>
@@ -75,7 +76,8 @@ function writeHtml(query, option) {
   } else {
     const option = ${json};
     option.chart = { ...(option.chart || {}), renderTo: 'container' };
-    option.title = { text: option.title?.text ?? '' };
+    // keep the layout-derived title style instead of replacing the object
+    option.title = { ...(option.title || {}), text: option.title?.text ?? '' };
     Highcharts.chart(option);
   }
 </script>

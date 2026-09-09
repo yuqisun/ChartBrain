@@ -23,11 +23,8 @@ jobs:
         run: python -m pytest -q
 
   sdk:
-    name: sdk (typecheck + build + vitest)
+    name: sdk (vendor flint-js + typecheck + build + vitest)
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: sdk
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -35,11 +32,22 @@ jobs:
           node-version: "22"
           cache: npm
           cache-dependency-path: sdk/package-lock.json
+      # The SDK consumes the vendored flint-js through a file: dependency, so the
+      # vendored package must be installed and built before the SDK installs.
+      - name: Build vendored flint-js
+        working-directory: vendor/flint-chart/packages/flint-js
+        run: |
+          npm install
+          npm run build
       - name: Install
-        run: npm ci
+        working-directory: sdk
+        run: npm install
       - name: Typecheck
+        working-directory: sdk
         run: npm run typecheck
       - name: Build
+        working-directory: sdk
         run: npm run build
       - name: Test
+        working-directory: sdk
         run: npm test

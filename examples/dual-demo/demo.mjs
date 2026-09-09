@@ -63,7 +63,8 @@ function writeDualHtml(query, hc, ec) {
 <head>
 <meta charset="utf-8" />
 <title>ChartBrain dual-chart — ${escapeHtml(query)}</title>
-<script src="https://code.highcharts.com/highcharts.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highcharts@12/highcharts.js"></script>
+<script>if (!window.Highcharts) { document.write('<script src="https://registry.npmmirror.com/highcharts/12.6.0/files/highcharts.js"><\\/script>'); }</script>
 <script>if (!window.Highcharts) { document.write('<script src="./node_modules/highcharts/highcharts.js"><\\/script>'); }</script>
 <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
 <script>if (!window.echarts) { document.write('<script src="./node_modules/echarts/dist/echarts.min.js"><\\/script>'); }</script>
@@ -91,7 +92,8 @@ function writeDualHtml(query, hc, ec) {
   } else {
     const opt = ${hcJson};
     opt.chart = { ...(opt.chart || {}), renderTo: 'hc' };
-    opt.title = { text: opt.title?.text ?? '' };
+    // keep the layout-derived title style instead of replacing the object
+    opt.title = { ...(opt.title || {}), text: opt.title?.text ?? '' };
     Highcharts.chart(opt);
   }
   if (!window.echarts) {
