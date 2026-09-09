@@ -180,6 +180,26 @@ describe('highcharts backend smoke', () => {
     expect(option.series[0].marker.enabled).toBe(true);
   });
 
+  it('Connected Scatter Plot keeps duplicate x points instead of summing them', () => {
+    const option = assembleHighcharts({
+      data: {
+        values: [
+          { x: 1, y: 10, g: 'A' },
+          { x: 1, y: 20, g: 'A' },
+          { x: 2, y: 30, g: 'A' },
+        ],
+      },
+      semantic_types: { x: 'Quantity', y: 'Quantity', g: 'Category' },
+      chart_spec: {
+        chartType: 'Connected Scatter Plot',
+        encodings: { x: { field: 'x' }, y: { field: 'y' }, color: { field: 'g' } },
+      },
+    }) as any;
+
+    // line 模板会把两个 x=1 的行合并成 [1,30]；连线散点必须保留两个点
+    expect(option.series[0].data).toEqual([[1, 10], [1, 20], [2, 30]]);
+  });
+
   it('Pie Chart → {name, y} slices with percentage labels', () => {
     const option = assembleHighcharts({
       ...CATEGORICAL_BASE,
@@ -400,25 +420,15 @@ describe('highcharts backend smoke', () => {
     expect(a.series[0].data).toEqual(b.series[0].data);
     // y 值保持原值；x 被抖动到类目带内
     expect(a.series[0].data.map((p: any) => p[1])).toEqual([120, 150, 90]);
+    // 带内断言：East(slot=0) 的两点落在 [-0.4, 0.4)，West(slot=1) 落在 [0.6, 1.4)
+    const xs = a.series[0].data.map((p: any) => p[0]);
+    expect(xs[0]).toBeGreaterThanOrEqual(-0.4);
+    expect(xs[0]).toBeLessThan(0.4);
+    expect(xs[1]).toBeGreaterThanOrEqual(-0.4);
+    expect(xs[1]).toBeLessThan(0.4);
+    expect(xs[2]).toBeGreaterThanOrEqual(0.6);
+    expect(xs[2]).toBeLessThan(1.4);
+    expect(xs[0]).not.toBe(xs[1]); // 同带内两点的 x 必须不同（否则就是堆叠）
   });
 
-  it('Connected Scatter Plot keeps duplicate x points instead of summing them', () => {
-    const option = assembleHighcharts({
-      data: {
-        values: [
-          { x: 1, y: 10, g: 'A' },
-          { x: 1, y: 20, g: 'A' },
-          { x: 2, y: 30, g: 'A' },
-        ],
-      },
-      semantic_types: { x: 'Quantity', y: 'Quantity', g: 'Category' },
-      chart_spec: {
-        chartType: 'Connected Scatter Plot',
-        encodings: { x: { field: 'x' }, y: { field: 'y' }, color: { field: 'g' } },
-      },
-    }) as any;
-
-    // line 模板会把两个 x=1 的行合并成 [1,30]；连线散点必须保留两个点
-    expect(option.series[0].data).toEqual([[1, 10], [1, 20], [2, 30]]);
-  });
 });
