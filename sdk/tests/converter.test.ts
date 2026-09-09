@@ -30,16 +30,20 @@ const regionBarSpec: ChartSpec = {
   },
 };
 
+// P1 起 Highcharts 配置由 fork 的 flint-js `assembleHighcharts` 编译，
+// 断言只针对语义（图型 / 轴 / 数据 / 标题），不再锁定手写转换器的具体字段。
 describe("buildHighcharts: 变换 + 转换（region_bar 用例）", () => {
-  it("产出 Highcharts column 配置（服务端 spec 直接可渲染）", () => {
+  it("产出可渲染的 Highcharts column 配置", () => {
     const opt = buildHighcharts(sales, regionBarSpec);
-    expect(opt).toEqual({
-      chart: { type: "column" },
-      title: { text: "各区域营收对比" },
-      xAxis: { categories: ["华东", "华南"], title: { text: "region" } },
-      yAxis: { title: { text: "region_revenue" } },
-      series: [{ name: "各区域营收对比", data: [4700, 1700] }],
-    });
+    expect(opt.chart.type).toBe("column");
+    expect(opt.title?.text).toBe("各区域营收对比");
+    expect(opt.xAxis).toMatchObject({ type: "category", categories: ["华东", "华南"] });
+    expect(opt.yAxis).toMatchObject({ type: "linear" });
+    expect(opt.series).toHaveLength(1);
+    expect(opt.series[0].type).toBe("column");
+    expect(opt.series[0].data).toEqual([4700, 1700]);
+    expect(opt.chart.width).toBeGreaterThan(0);
+    expect(opt.chart.height).toBeGreaterThan(0);
   });
 });
 
@@ -53,14 +57,20 @@ describe("toHighcharts 各图型", () => {
     },
   };
 
-  it("line", () => {
+  it("line（temporal x → datetime 轴 + [x,y] 点对）", () => {
     const opt = toHighcharts(sales, { ...base, chart: { type: "line", title: "t" } });
     expect(opt.chart.type).toBe("line");
-    expect(opt.xAxis?.categories).toEqual(["2026-01", "2026-02", "2026-03"]);
-    expect(opt.series[0].data).toEqual([1200, 900, 1500, 800, 2000]);
+    expect(opt.xAxis).toMatchObject({ type: "datetime" });
+    expect(opt.series[0].type).toBe("line");
+    // 同一时间点多行求和：2026-01 = 1200 + 900，依此类推
+    expect(opt.series[0].data).toEqual([
+      [Date.parse("2026-01"), 2100],
+      [Date.parse("2026-02"), 2300],
+      [Date.parse("2026-03"), 2000],
+    ]);
   });
 
-  it("pie", () => {
+  it("pie（中性 spec 的 x=分类 / y=数值 映射到 Flint 的 color / size）", () => {
     const opt = toHighcharts(
       [
         { region: "华东", revenue: 4700 },
@@ -76,6 +86,7 @@ describe("toHighcharts 各图型", () => {
       },
     );
     expect(opt.chart.type).toBe("pie");
+    expect(opt.series[0].type).toBe("pie");
     expect(opt.series[0].data).toEqual([
       { name: "华东", y: 4700 },
       { name: "华南", y: 1700 },
@@ -98,6 +109,7 @@ describe("toHighcharts 各图型", () => {
       },
     );
     expect(opt.chart.type).toBe("scatter");
+    expect(opt.series[0].type).toBe("scatter");
     expect(opt.series[0].data).toEqual([
       [40, 1200],
       [55, 1800],
@@ -126,16 +138,24 @@ describe("toHighcharts 各图型", () => {
       },
     };
     const opt = buildHighcharts(sales, spec);
-    expect(opt.xAxis?.categories).toEqual(["2026-01", "2026-02", "2026-03"]);
-    expect(opt.series).toEqual([
-      { name: "华东", data: [1200, 1500, 2000] },
-      { name: "华南", data: [900, 800, 0] },
+    expect(opt.xAxis).toMatchObject({ type: "datetime" });
+    expect(opt.series.map((s) => s.name)).toEqual(["华东", "华南"]);
+    expect(opt.series[0].data).toEqual([
+      [Date.parse("2026-01"), 1200],
+      [Date.parse("2026-02"), 1500],
+      [Date.parse("2026-03"), 2000],
+    ]);
+    // 华南缺 2026-03 → 该点不出现（折线自然断开），而不是补 0
+    expect(opt.series[1].data).toEqual([
+      [Date.parse("2026-01"), 900],
+      [Date.parse("2026-02"), 800],
     ]);
   });
 
   it("空数据不崩溃", () => {
     const opt = toHighcharts([], base);
+    expect(Array.isArray(opt.series)).toBe(true);
     expect(opt.series[0].data).toEqual([]);
-    expect(opt.xAxis?.categories).toEqual([]);
+    expect(opt.xAxis).toMatchObject({ categories: [] });
   });
 });

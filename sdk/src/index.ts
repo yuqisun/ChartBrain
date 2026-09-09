@@ -2,7 +2,8 @@
  * @chartbrain/sdk —— ChartBrain 消费端 SDK（D13）。
  *
  * 确定性步骤全部在本地完成：① 执行声明式变换 ② 中性 spec → 库配置 ③ 数据绑定。
- * MVP 只提供 Highcharts 后端（D11）；ECharts 后端经 flint-js（M5，D12）。
+ * 两个后端均经 vendored flint-js 编译（D15/D12）：Highcharts 后端为本仓库新增，
+ * ECharts 后端沿用上游实现。
  */
 
 import { toHighcharts } from "./converter/highcharts.js";

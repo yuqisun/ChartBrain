@@ -18,7 +18,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "flint-chart": "^0.5.1"
+    "flint-chart": "file:../vendor/flint-chart/packages/flint-js"
   },
   "devDependencies": {
     "typescript": "^5.5.0",

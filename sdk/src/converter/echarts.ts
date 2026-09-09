@@ -31,9 +31,16 @@ export function toECharts(data: Row[], spec: ChartSpec): unknown {
   const x = spec.encodings.x;
   const y = spec.encodings.y;
   const s = spec.encodings.series;
-  if (x) encodings.x = { field: x.field };
-  if (y) encodings.y = { field: y.field };
-  if (s) encodings.color = { field: s.field };
+
+  if (spec.chart.type === "pie") {
+    // Flint 的饼图模板读 color（扇区）+ size（度量），而中性 spec 用 x=分类、y=数值。
+    if (x) encodings.color = { field: x.field };
+    if (y) encodings.size = { field: y.field };
+  } else {
+    if (x) encodings.x = { field: x.field };
+    if (y) encodings.y = { field: y.field };
+    if (s) encodings.color = { field: s.field };
+  }
 
   const input: FlintInput = {
     data: { values: data },
