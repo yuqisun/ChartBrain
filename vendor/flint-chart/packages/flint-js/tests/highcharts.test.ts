@@ -26,7 +26,7 @@ describe('highcharts backend smoke', () => {
   it('registers the ChartBrain chart types', () => {
     const names = hcAllTemplateDefs.map(t => t.chart);
     expect(names).toEqual(
-      expect.arrayContaining(['Bar Chart', 'Line Chart', 'Area Chart', 'Scatter Plot', 'Pie Chart', 'Donut Chart', 'Slope Chart']),
+      expect.arrayContaining(['Bar Chart', 'Line Chart', 'Area Chart', 'Scatter Plot', 'Connected Scatter Plot', 'Pie Chart', 'Donut Chart', 'Slope Chart']),
     );
     expect(hcGetTemplateDef('Bar Chart')).toBeDefined();
     expect(hcGetTemplateDef('Nonexistent Chart')).toBeUndefined();
@@ -133,6 +133,51 @@ describe('highcharts backend smoke', () => {
     expect(option.series).toHaveLength(3);
     expect(option.series[0].data).toEqual([[1.6, 32]]);
     expect(option.tooltip.pointFormat).toBeDefined();
+  });
+
+  it('Connected Scatter Plot → path follows data order (no sorting)', () => {
+    const option = assembleHighcharts({
+      data: {
+        values: [
+          { x: 3, y: 1, g: 'A' },
+          { x: 1, y: 2, g: 'A' },
+          { x: 2, y: 3, g: 'A' },
+        ],
+      },
+      semantic_types: { x: 'Quantity', y: 'Quantity', g: 'Category' },
+      chart_spec: {
+        chartType: 'Connected Scatter Plot',
+        encodings: { x: { field: 'x' }, y: { field: 'y' }, color: { field: 'g' } },
+      },
+    }) as any;
+
+    expect(option.chart.type).toBe('line');
+    expect(option.series).toHaveLength(1);
+    expect(option.series[0].name).toBe('A');
+    expect(option.series[0].data).toEqual([[3, 1], [1, 2], [2, 3]]);
+    expect(option.series[0].marker.enabled).toBe(true);
+  });
+
+  it('Connected Scatter Plot without color keeps one path in row order', () => {
+    const option = assembleHighcharts({
+      data: {
+        values: [
+          { x: 5, y: 1 },
+          { x: 2, y: 3 },
+          { x: 7, y: 2 },
+        ],
+      },
+      semantic_types: { x: 'Quantity', y: 'Quantity' },
+      chart_spec: {
+        chartType: 'Connected Scatter Plot',
+        encodings: { x: { field: 'x' }, y: { field: 'y' } },
+      },
+    }) as any;
+
+    expect(option.series).toHaveLength(1);
+    expect(option.series[0].name).toBe('y');
+    expect(option.series[0].data).toEqual([[5, 1], [2, 3], [7, 2]]);
+    expect(option.series[0].marker.enabled).toBe(true);
   });
 
   it('Pie Chart → {name, y} slices with percentage labels', () => {
