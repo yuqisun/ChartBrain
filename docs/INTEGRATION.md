@@ -188,11 +188,11 @@ UX 建议：输入框 + 常用问题建议（见 `examples/dual-demo/QUESTIONS.m
 | waterfall / boxplot / gauge（B2） | `highcharts/highcharts-more.js` |
 | funnel / pyramid（B2） | `highcharts/modules/funnel.js` |
 | streamgraph（B2） | `highcharts/modules/streamgraph.js` |
-| rose（B2） | `highcharts/modules/variable-pie.js`（上游模块名，未在本地 12.6.0 包中验证） |
+| rose（B2） | `highcharts/modules/variable-pie.js`（实测注册 `variablepie` series） |
 | radar（B2） | `highcharts/highcharts-more.js`（polar 支持随该模块） |
-| histogram（B3） | 无需模块（后端分箱）或 `highcharts/modules/histogram-bellcurve.js` |
+| histogram（B3） | `highcharts/modules/histogram-bellcurve.js`（实测注册 `histogram` + `bellcurve` 原生 series，B3 可直接用原生模块；或后端分箱，无需模块） |
 
-> 上表除 rose 外均在 Highcharts 12.6.0 下实测：加载模块后断言 `Highcharts.seriesTypes.<name>`。
+> 上表全部行均在 Highcharts 12.6.0 下实测：加载模块后断言 `Highcharts.seriesTypes.<name>`。
 > 注意 `lollipop.js` 依赖 `dumbbell.js`，而 `dumbbell.js` 又依赖 `highcharts-more.js` 提供的 `arearange`；
 > 只加载 `lollipop.js` 会抛出 `Cannot read properties of undefined (reading 'prototype')` 这类难以定位的错误。
 
