@@ -249,3 +249,48 @@ describe("toHighcharts 各图型", () => {
     expect((toECharts(sales, groupedSpec) as any).series[0].stack).toBeUndefined();
   });
 });
+
+describe("已知分歧钉住：重复 (x, series) 行是契约外输入（M2）", () => {
+  it("重复 x 是契约外输入：HC 求和、EC 取最后一行（已知分歧，钉住以防漂移）", () => {
+    // 输入未在 transform_plan 里按 (x, series) 预聚合——同一 (before, East) 出现两行。
+    // 契约要求先 aggregate 再渲染（docs/INTEGRATION.md「重复 (x, series) 行不在契约内」）；
+    // 但契约外输入也得有确定行为，且两端行为不同，必须钉死防止静默漂移：
+    //   HC 折线族对重复 x 求和：highcharts/templates/line.ts:42-51（数值/时间轴 toPairs）
+    //   与 :88-100（分类轴 buildValues）都用 agg 累加；slope 委托 line（slope.ts:20-25）。
+    //   EC 分类轴路径 last-wins：echarts/templates/slope.ts:48-52 alignToPeriods 与
+    //   echarts/templates/line.ts:315-319 buildCategoryAlignedData 都是 map.set 覆盖。
+    // 任一端行为变了这里就红，改动者必须重读该契约。
+    const dupX: Row[] = [
+      { period: "before", region: "East", revenue: 100 },
+      { period: "before", region: "East", revenue: 50 }, // 重复 (before, East)
+      { period: "after", region: "East", revenue: 200 },
+      { period: "before", region: "West", revenue: 90 },
+      { period: "after", region: "West", revenue: 110 },
+    ];
+    const spec: ChartSpec = {
+      schema_version: 1,
+      chart: { type: "slope", title: "重复 x 分歧钉住" },
+      encodings: {
+        x: { field: "period", value_type: "categorical" },
+        y: { field: "revenue", value_type: "numeric" },
+        series: { field: "region" },
+      },
+    };
+
+    const hc = toHighcharts(dupX, spec) as any;
+    const ec = toECharts(dupX, spec) as any;
+    // 两端都是同一张分类轴（period 按序 before/after），逐位对齐才有可比性
+    expect(hc.xAxis).toMatchObject({ type: "category", categories: ["before", "after"] });
+    expect(ec.xAxis).toMatchObject({ type: "category", data: ["before", "after"] });
+    const hcEast = hc.series.find((s: any) => s.name === "East").data;
+    const hcWest = hc.series.find((s: any) => s.name === "West").data;
+    const ecEast = ec.series.find((s: any) => s.name === "East").data;
+    const ecWest = ec.series.find((s: any) => s.name === "West").data;
+    // HC 求和：East@before = 100 + 50 = 150
+    expect(hcEast).toEqual([150, 200]);
+    expect(hcWest).toEqual([90, 110]);
+    // EC last-wins：East@before 取最后一行 50
+    expect(ecEast).toEqual([50, 200]);
+    expect(ecWest).toEqual([90, 110]);
+  });
+});
