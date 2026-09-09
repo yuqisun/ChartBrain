@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { buildHighcharts, toHighcharts } from "../src/index";
+import { buildHighcharts, toHighcharts, toECharts } from "../src/index";
 import type { ChartSpec, Row } from "../src/types";
 
 const sales: Row[] = [
@@ -157,5 +157,60 @@ describe("toHighcharts 各图型", () => {
     expect(Array.isArray(opt.series)).toBe(true);
     expect(opt.series[0].data).toEqual([]);
     expect(opt.xAxis).toMatchObject({ categories: [] });
+  });
+
+  it("donut（x/y 映射到 color/size）", () => {
+    const opt = toHighcharts(
+      [
+        { region: "华东", revenue: 4700 },
+        { region: "华南", revenue: 1700 },
+      ],
+      {
+        schema_version: 1,
+        chart: { type: "donut", title: "营收占比" },
+        encodings: {
+          x: { field: "region", value_type: "categorical" },
+          y: { field: "revenue", value_type: "numeric" },
+        },
+      },
+    );
+    expect(opt.chart.type).toBe("pie");
+    expect(opt.series[0].innerSize).toBe("50%");
+    expect(opt.series[0].data).toHaveLength(2);
+  });
+
+  it("groupedBar（series 映射到 group 通道，不堆叠）", () => {
+    const opt = toHighcharts(sales, {
+      schema_version: 1,
+      chart: { type: "groupedBar", title: "分组柱" },
+      encodings: {
+        x: { field: "month", value_type: "categorical" },
+        y: { field: "revenue", value_type: "numeric" },
+        series: { field: "region" },
+      },
+    });
+    expect(opt.chart.type).toBe("column");
+    expect(opt.series).toHaveLength(2);
+    expect((opt as any).plotOptions?.series?.stacking).toBeUndefined();
+  });
+
+  it("every whitelisted chart type is accepted by both adapters", () => {
+    const types = [
+      "bar", "line", "pie", "scatter", "area",
+      "groupedBar", "stackedBar", "donut", "slope", "connectedScatter", "strip",
+    ] as const;
+    for (const type of types) {
+      const spec: ChartSpec = {
+        schema_version: 1,
+        chart: { type, title: type },
+        encodings: {
+          x: { field: "month", value_type: "categorical" },
+          y: { field: "revenue", value_type: "numeric" },
+          series: { field: "region" },
+        },
+      };
+      expect(() => toHighcharts(sales, spec)).not.toThrow();
+      expect(() => toECharts(sales, spec)).not.toThrow();
+    }
   });
 });

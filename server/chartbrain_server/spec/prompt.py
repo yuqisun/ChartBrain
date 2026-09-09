@@ -25,7 +25,8 @@ Output JSON shape (field details follow the schema description in the user messa
 }
 
 Hard rules:
-1. chart.type must be one of: bar | line | pie | scatter | area.
+1. chart.type must be one of: bar | line | pie | scatter | area |
+   groupedBar | stackedBar | donut | slope | connectedScatter | strip.
 2. Any data processing must be expressed declaratively in transform_plan.steps, using ONLY these
    operators: filter | aggregate | sort | limit | derive | binTime. Use at most 6 steps.
    - filter:    { "op":"filter", "field":"col", "operator":"eq|neq|gt|gte|lt|lte|between|in|contains", "value":..., "values":[...] }
@@ -174,6 +175,164 @@ def build_user_prompt(req: ChartRequest) -> str:
                     "encodings": {
                         "x": {"field": "quarter", "value_type": "categorical"},
                         "y": {"field": "quarterly_revenue", "value_type": "numeric"},
+                    },
+                },
+            },
+            {
+                "query": "Compare revenue by month, side by side per region",
+                "columns": [
+                    {"name": "month", "type": "string"},
+                    {"name": "region", "type": "string"},
+                    {"name": "revenue", "type": "number"},
+                ],
+                "chart_spec": {
+                    "schema_version": 1,
+                    "chart": {"type": "groupedBar", "title": "Revenue by month and region"},
+                    "transform_plan": {
+                        "steps": [
+                            {
+                                "op": "aggregate",
+                                "group_by": ["month", "region"],
+                                "measures": [
+                                    {
+                                        "field": "revenue",
+                                        "agg": "sum",
+                                        "as": "monthly_revenue",
+                                    }
+                                ],
+                            }
+                        ]
+                    },
+                    "encodings": {
+                        "x": {"field": "month", "value_type": "categorical"},
+                        "y": {"field": "monthly_revenue", "value_type": "numeric"},
+                        "series": {"field": "region"},
+                    },
+                },
+            },
+            {
+                "query": "Show how revenue is composed by region each month",
+                "columns": [
+                    {"name": "month", "type": "string"},
+                    {"name": "region", "type": "string"},
+                    {"name": "revenue", "type": "number"},
+                ],
+                "chart_spec": {
+                    "schema_version": 1,
+                    "chart": {"type": "stackedBar", "title": "Revenue composition by region"},
+                    "transform_plan": {
+                        "steps": [
+                            {
+                                "op": "aggregate",
+                                "group_by": ["month", "region"],
+                                "measures": [
+                                    {
+                                        "field": "revenue",
+                                        "agg": "sum",
+                                        "as": "monthly_revenue",
+                                    }
+                                ],
+                            }
+                        ]
+                    },
+                    "encodings": {
+                        "x": {"field": "month", "value_type": "categorical"},
+                        "y": {"field": "monthly_revenue", "value_type": "numeric"},
+                        "series": {"field": "region"},
+                    },
+                },
+            },
+            {
+                "query": "Show each region's share of total revenue",
+                "columns": [
+                    {"name": "region", "type": "string"},
+                    {"name": "revenue", "type": "number"},
+                ],
+                "chart_spec": {
+                    "schema_version": 1,
+                    "chart": {"type": "donut", "title": "Revenue share by region"},
+                    "transform_plan": {
+                        "steps": [
+                            {
+                                "op": "aggregate",
+                                "group_by": ["region"],
+                                "measures": [
+                                    {
+                                        "field": "revenue",
+                                        "agg": "sum",
+                                        "as": "region_revenue",
+                                    }
+                                ],
+                            }
+                        ]
+                    },
+                    "encodings": {
+                        "x": {"field": "region", "value_type": "categorical"},
+                        "y": {"field": "region_revenue", "value_type": "numeric"},
+                    },
+                },
+            },
+            {
+                "query": "Compare each region's revenue between the two periods",
+                "columns": [
+                    {"name": "period", "type": "string"},
+                    {"name": "region", "type": "string"},
+                    {"name": "revenue", "type": "number"},
+                ],
+                "chart_spec": {
+                    "schema_version": 1,
+                    "chart": {"type": "slope", "title": "Revenue shift by region"},
+                    "transform_plan": {
+                        "steps": [
+                            {
+                                "op": "aggregate",
+                                "group_by": ["period", "region"],
+                                "measures": [
+                                    {
+                                        "field": "revenue",
+                                        "agg": "sum",
+                                        "as": "period_revenue",
+                                    }
+                                ],
+                            }
+                        ]
+                    },
+                    "encodings": {
+                        "x": {"field": "period", "value_type": "categorical"},
+                        "y": {"field": "period_revenue", "value_type": "numeric"},
+                        "series": {"field": "region"},
+                    },
+                },
+            },
+            {
+                "query": "Trace how orders and revenue move together over time",
+                "columns": [
+                    {"name": "orders", "type": "number"},
+                    {"name": "revenue", "type": "number"},
+                    {"name": "region", "type": "string"},
+                ],
+                "chart_spec": {
+                    "schema_version": 1,
+                    "chart": {"type": "connectedScatter", "title": "Orders vs revenue path"},
+                    "encodings": {
+                        "x": {"field": "orders", "value_type": "numeric"},
+                        "y": {"field": "revenue", "value_type": "numeric"},
+                        "series": {"field": "region"},
+                    },
+                },
+            },
+            {
+                "query": "Show the spread of revenue across regions",
+                "columns": [
+                    {"name": "region", "type": "string"},
+                    {"name": "revenue", "type": "number"},
+                ],
+                "chart_spec": {
+                    "schema_version": 1,
+                    "chart": {"type": "strip", "title": "Revenue spread by region"},
+                    "encodings": {
+                        "x": {"field": "region", "value_type": "categorical"},
+                        "y": {"field": "revenue", "value_type": "numeric"},
                     },
                 },
             },
