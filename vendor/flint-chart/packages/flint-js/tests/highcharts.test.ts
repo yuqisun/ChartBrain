@@ -5,10 +5,10 @@ import { describe, it, expect } from 'vitest';
 import { assembleHighcharts, hcAllTemplateDefs, hcGetTemplateDef } from '../src';
 
 const CATEGORICAL_DATA = [
-  { month: '2026-01', region: 'East', revenue: 120 },
-  { month: '2026-02', region: 'East', revenue: 150 },
-  { month: '2026-01', region: 'West', revenue: 90 },
-  { month: '2026-02', region: 'West', revenue: 110 },
+  { month: '2026-01', period: 'before', region: 'East', revenue: 120 },
+  { month: '2026-02', period: 'after', region: 'East', revenue: 150 },
+  { month: '2026-01', period: 'before', region: 'West', revenue: 90 },
+  { month: '2026-02', period: 'after', region: 'West', revenue: 110 },
 ];
 
 const SCATTER_DATA = [
@@ -19,7 +19,7 @@ const SCATTER_DATA = [
 
 const CATEGORICAL_BASE = {
   data: { values: CATEGORICAL_DATA },
-  semantic_types: { month: 'YearMonth', region: 'Country', revenue: 'Price' },
+  semantic_types: { month: 'YearMonth', period: 'Category', region: 'Country', revenue: 'Price' },
 };
 
 describe('highcharts backend smoke', () => {
@@ -87,6 +87,21 @@ describe('highcharts backend smoke', () => {
     expect(option.xAxis.type).toBe('datetime');
     expect(option.series.every((s: any) => s.type === 'area')).toBe(true);
     expect(option.plotOptions.series.stacking).toBe('normal');
+  });
+
+  it('Slope Chart → one line per entity across two periods', () => {
+    const option = assembleHighcharts({
+      ...CATEGORICAL_BASE,
+      chart_spec: {
+        chartType: 'Slope Chart',
+        encodings: { x: { field: 'period' }, y: { field: 'revenue' }, color: { field: 'region' } },
+      },
+    }) as any;
+
+    expect(option.chart.type).toBe('line');
+    expect(option.series).toHaveLength(2);
+    expect(option.series[0].data).toHaveLength(2);
+    expect(option.series[0].marker.enabled).toBe(true);
   });
 
   it('Scatter Plot → [x, y] pairs on linear axes, one series per group', () => {

@@ -7,6 +7,7 @@ import { ChartTemplateDef } from '../../core/types';
 import { hcBarChartDef, hcGroupedBarChartDef, hcStackedBarChartDef } from './bar';
 import { hcLineChartDef } from './line';
 import { hcAreaChartDef } from './area';
+import { hcSlopeChartDef } from './slope';
 import { hcScatterPlotDef } from './scatter';
 import { hcPieChartDef } from './pie';
 import { hcDonutChartDef } from './donut';
@@ -15,7 +16,7 @@ import { hcDonutChartDef } from './donut';
 export const hcTemplateDefs: { [key: string]: ChartTemplateDef[] } = {
     'Scatter & Point': [hcScatterPlotDef],
     'Bar':             [hcBarChartDef, hcGroupedBarChartDef, hcStackedBarChartDef],
-    'Line & Area':     [hcLineChartDef, hcAreaChartDef],
+    'Line & Area':     [hcLineChartDef, hcAreaChartDef, hcSlopeChartDef],
     'Part-to-Whole':   [hcPieChartDef, hcDonutChartDef],
 };
 
