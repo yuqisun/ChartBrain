@@ -16,6 +16,7 @@
 import { assembleHighcharts } from "flint-chart";
 
 import type { ChartSpec, ChartType, Row } from "../types.js";
+import { validateChannels } from "./validate.js";
 
 const FLINT_CHART_TYPE: Record<ChartType, string> = {
   bar: "Bar Chart",
@@ -96,6 +97,9 @@ function buildEncodings(spec: ChartSpec): Record<string, { field: string }> {
 
 /** 中性 spec + 变换后的最终表 → Highcharts options。 */
 export function toHighcharts(data: Row[], spec: ChartSpec): HighchartsOption {
+  // M3：缺必需通道时在此抛错（双端一致），不许坏 spec 漏到后端产出垃圾配置
+  validateChannels(spec);
+
   const input: FlintInput = {
     data: { values: data },
     chart_spec: {

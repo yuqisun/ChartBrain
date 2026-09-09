@@ -16,6 +16,7 @@
 import { assembleECharts } from "flint-chart";
 
 import type { ChartSpec, ChartType, Row } from "../types.js";
+import { validateChannels } from "./validate.js";
 
 const FLINT_CHART_TYPE: Record<ChartType, string> = {
   bar: "Bar Chart",
@@ -35,6 +36,9 @@ type FlintInput = Parameters<typeof assembleECharts>[0];
 
 /** 中性 spec + 变换后的最终表 → ECharts option（对象形状由 Flint 决定）。 */
 export function toECharts(data: Row[], spec: ChartSpec): unknown {
+  // M3：缺必需通道时在此抛错（双端一致），不许坏 spec 漏到后端静默画成别的图
+  validateChannels(spec);
+
   const encodings: Record<string, { field: string }> = {};
   const x = spec.encodings.x;
   const y = spec.encodings.y;
