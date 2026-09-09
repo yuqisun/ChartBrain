@@ -173,13 +173,17 @@ UX 建议：输入框 + 常用问题建议（见 `examples/dual-demo/QUESTIONS.m
 | 图型 | 需加载的模块 |
 |---|---|
 | groupedBar / stackedBar / donut / slope / connectedScatter / strip | 无（核心包即可） |
-| lollipop（B2） | `highcharts/modules/lollipop.js` |
+| lollipop（B2） | **`highcharts/highcharts-more.js` → `highcharts/modules/dumbbell.js` → `highcharts/modules/lollipop.js`（顺序不能颠倒）** |
 | waterfall / boxplot / gauge（B2） | `highcharts/highcharts-more.js` |
 | funnel / pyramid（B2） | `highcharts/modules/funnel.js` |
 | streamgraph（B2） | `highcharts/modules/streamgraph.js` |
-| rose（B2） | `highcharts/modules/variable-pie.js` |
-| radar（B2） | `highcharts/highcharts-more.js` |
+| rose（B2） | `highcharts/modules/variable-pie.js`（上游模块名，未在本地 12.6.0 包中验证） |
+| radar（B2） | `highcharts/highcharts-more.js`（polar 支持随该模块） |
 | histogram（B3） | 无需模块（后端分箱）或 `highcharts/modules/histogram-bellcurve.js` |
+
+> 上表除 rose 外均在 Highcharts 12.6.0 下实测：加载模块后断言 `Highcharts.seriesTypes.<name>`。
+> 注意 `lollipop.js` 依赖 `dumbbell.js`，而 `dumbbell.js` 又依赖 `highcharts-more.js` 提供的 `arearange`；
+> 只加载 `lollipop.js` 会抛出 `Cannot read properties of undefined (reading 'prototype')` 这类难以定位的错误。
 
 ## 参考
 
