@@ -5,7 +5,7 @@
  *
  * 用法：
  *   node scripts/chart-parity.mjs                    # 用 vendor 的 dist
- *   node scripts/chart-parity.mjs --dist <dir>       # 用任意构建产物目录（须含 *\/index.cjs）
+ *   node scripts/chart-parity.mjs --dist <dir>       # 用任意构建产物目录（须含 *\/index.cjs 或 *\/index.js）
  */
 import { createRequire } from 'node:module';
 import { existsSync } from 'node:fs';
@@ -22,14 +22,24 @@ const DIST = i > -1
   ? path.resolve(process.argv[i + 1])
   : path.join(root, 'vendor/flint-chart/packages/flint-js/dist');
 
-for (const f of ['highcharts/index.cjs', 'echarts/index.cjs']) {
-  if (!existsSync(path.join(DIST, f))) {
-    console.error(`✗ 找不到 ${path.join(DIST, f)}\n  先在 vendor 目录执行 npm run build`);
+// 每个后端依次尝试 index.cjs（esbuild 产物）与 index.js（tsc 产物），
+// 取第一个存在的；两者都缺才报错退出 2。
+const BACKENDS = ['highcharts', 'echarts'];
+const entries = {};
+for (const b of BACKENDS) {
+  const cjs = path.join(DIST, `${b}/index.cjs`);
+  const js = path.join(DIST, `${b}/index.js`);
+  if (existsSync(cjs)) {
+    entries[b] = cjs;
+  } else if (existsSync(js)) {
+    entries[b] = js;
+  } else {
+    console.error(`✗ 找不到 ${b} 后端产物：\n    ${cjs}\n    ${js}\n  先在 vendor 目录执行 npm run build，或用 tsc 构建后以 --dist 指定产物目录`);
     process.exit(2);
   }
 }
-const { assembleHighcharts } = require(path.join(DIST, 'highcharts/index.cjs'));
-const { assembleECharts } = require(path.join(DIST, 'echarts/index.cjs'));
+const { assembleHighcharts } = require(entries.highcharts);
+const { assembleECharts } = require(entries.echarts);
 
 const CAT = [
   { month: '2026-01', period: 'before', region: 'East', revenue: 120 },
