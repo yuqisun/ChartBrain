@@ -144,16 +144,19 @@ const CASES = [
     },
   },
   {
-    label: "Slope — revenue shift across two half-years",
+    label: "Slope — revenue shift Jul 2025 → Jun 2026",
     spec: {
       schema_version: 1,
-      chart: { type: "slope", title: "Revenue shift by region" },
+      chart: { type: "slope", title: "Revenue shift by region (Jul 2025 → Jun 2026)" },
       transform_plan: {
-        steps: [{
-          op: "aggregate",
-          group_by: ["month", "region"],
-          measures: [{ field: "revenue", agg: "sum", as: "monthly_revenue" }],
-        }],
+        steps: [
+          { op: "filter", field: "month", operator: "in", values: ["2025-07", "2026-06"] },
+          {
+            op: "aggregate",
+            group_by: ["month", "region"],
+            measures: [{ field: "revenue", agg: "sum", as: "monthly_revenue" }],
+          },
+        ],
       },
       encodings: {
         x: { field: "month", value_type: "temporal" },
