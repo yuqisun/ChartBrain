@@ -70,7 +70,7 @@ Bullet 转入 G3（需扩通道），见 §10。Gantt 原本就在 G2，本轮�
 1. 只做「语义 → 该库 option」的翻译，布局/零基线/溢出裁剪继续走 core（`computeLayout` / `filterOverflow`）；
 2. 不得在模板里重新判定字段类型（那是 Phase 0 的职责）；
 3. 早退（缺必要通道）时**必须**保证 `spec` 不处于半成品状态；
-4. 数据聚合语义与 EC 端对齐：重复 x 求和、双离散计数（D15 已确立的约定）。
+4. 不得声明「重复 x 与 EC 端对齐（求和）」——该语义实际不统一：Highcharts 折线族（line/area/slope）对重复 x **求和**（分类轴与时间轴分支一致），Connected Scatter **保留**重复点（路径语义）；上游 ECharts 的分类轴对齐（line/slope）是 **last-wins**（`map.set` 覆盖），时间/数值轴保留原始点。故重复 (x, series) 行属**契约外**：SDK 的 transform 运行时须在 `transform_plan` 里先用 `aggregate` 预聚合到「每个 (x, series) 恰一行」，模板不承担聚合兜底；双离散计数沿用 D15 约定。
 
 ## 4. 契约变更（4 处，均需同步）
 
