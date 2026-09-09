@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { buildHighcharts, toHighcharts, toECharts } from "../src/index";
-import type { ChartSpec, Row } from "../src/types";
+import type { ChartSpec, ChartType, Row } from "../src/types";
 
 const sales: Row[] = [
   { month: "2026-01", region: "华东", revenue: 1200 },
@@ -200,7 +200,8 @@ describe("toHighcharts 各图型", () => {
     // 做法，第 6 处；本轮不引入共享模块）。逐类型断言最小输出：若 groupedBar /
     // stackedBar 的 Flint 名字互换、stackedBar 丢掉堆叠、donut 的 EC 配色回归等，
     // 这里都会红。
-    const expected: Record<string, { hc: string; ec: string }> = {
+    // 键类型绑到 ChartType：漏掉一个图型或写错名字都是编译错误，而不是静默跳过
+    const expected: Record<ChartType, { hc: string; ec: string }> = {
       bar: { hc: "column", ec: "bar" },
       stackedBar: { hc: "column", ec: "bar" },
       groupedBar: { hc: "column", ec: "bar" },
@@ -228,8 +229,8 @@ describe("toHighcharts 各图型", () => {
       expect(hc.chart.type).toBe(want.hc);
       expect(ec.series[0].type).toBe(want.ec);
     }
-    // 堆叠语义单独钉住（图型断言只到 column 级，抓不到 stacking 丢失）
-    const stacked = toHighcharts(sales, {
+    // 堆叠语义单独钉住（图型断言只到 column 级，抓不到 stacking 丢失），两端都断言
+    const stackedSpec: ChartSpec = {
       schema_version: 1,
       chart: { type: "stackedBar", title: "s" },
       encodings: {
@@ -237,7 +238,13 @@ describe("toHighcharts 各图型", () => {
         y: { field: "revenue", value_type: "numeric" },
         series: { field: "region" },
       },
-    }) as any;
-    expect(stacked.plotOptions.series.stacking).toBe("normal");
+    };
+    expect((toHighcharts(sales, stackedSpec) as any).plotOptions.series.stacking).toBe("normal");
+    expect((toECharts(sales, stackedSpec) as any).series[0].stack).toBe("total");
+
+    // groupedBar 反向：两端都不许堆叠
+    const groupedSpec: ChartSpec = { ...stackedSpec, chart: { type: "groupedBar", title: "g" } };
+    expect((toHighcharts(sales, groupedSpec) as any).plotOptions?.series?.stacking).toBeUndefined();
+    expect((toECharts(sales, groupedSpec) as any).series[0].stack).toBeUndefined();
   });
 });
