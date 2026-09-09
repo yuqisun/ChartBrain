@@ -51,7 +51,12 @@ function buildBarDef(chart: string, stacked: boolean): ChartTemplateDef {
 
             const catCS = channelSemantics[categoryAxis];
             const valCS = channelSemantics[valueAxis];
-            const colorField = channelSemantics.color?.field ?? channelSemantics.group?.field;
+            // Mirror the ECharts backend exactly: bar/stacked read `color` only
+            // (echarts/templates/bar.ts:189,475); grouped tolerates a `color` fallback
+            // (echarts/templates/bar.ts:709).
+            const splitField = stacked
+                ? channelSemantics.color?.field
+                : channelSemantics.group?.field ?? channelSemantics.color?.field;
             const isHorizontal = categoryAxis === 'y';
             // Highcharts renders the series type, so a horizontal chart needs `bar`
             // (not `column`) on every series or the bars come out vertical.
@@ -72,14 +77,16 @@ function buildBarDef(chart: string, stacked: boolean): ChartTemplateDef {
                 groups.forEach((name, i) => {
                     series.push({ name, type: markType, data: matrix[i] });
                 });
-            } else if (colorField) {
-                // color + measure → one series per group (stacked when stacked).
-                const groups = groupBy(table, colorField);
+            } else if (splitField) {
+                // splitField + measure → one series per split group: stacked 变体
+                // （Bar/Stacked Bar）按 color 拆分堆叠，grouped 变体（Grouped Bar）
+                // 按 group 拆分并排；堆叠与否在下方 plotOptions 统一表达。
+                const groups = groupBy(table, splitField);
                 const names = [...groups.keys()];
                 const useCounts = valCS?.type === 'temporal';
                 const matrix = useCounts
                     ? names.map(name => buildCategoryCounts(groups.get(name)!, catField, categories))
-                    : buildGroupValueMatrix(table, catField, valField, colorField, categories, names);
+                    : buildGroupValueMatrix(table, catField, valField, splitField, categories, names);
                 names.forEach((name, i) => {
                     series.push({ name, type: markType, data: matrix[i] });
                 });
@@ -99,19 +106,19 @@ function buildBarDef(chart: string, stacked: boolean): ChartTemplateDef {
                     ? { type: 'category', categories, title: { text: catField } }
                     : { type: 'linear', title: { text: valCS?.type === 'temporal' ? 'Count' : valField } },
                 series,
-                legend: { enabled: series.length > 1, title: { text: colorField ?? '' } },
+                legend: { enabled: series.length > 1, title: { text: splitField ?? '' } },
                 _hcTooltip: {
                     trigger: 'axis',
                     categoryLabel: catField,
                     valueLabel: valCS?.type === 'temporal' ? 'Count' : valField,
-                    groupLabel: colorField,
+                    groupLabel: splitField,
                 },
             };
 
             // Stacked variants stack color/group series; grouped variants leave
             // them side by side (Highcharts' default). Plain category counts do
             // not stack.
-            if (stacked && colorField && !bothDiscrete) {
+            if (stacked && splitField && !bothDiscrete) {
                 option.plotOptions = { ...(option.plotOptions ?? {}), series: { stacking: 'normal' } };
             }
 

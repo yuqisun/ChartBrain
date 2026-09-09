@@ -258,6 +258,8 @@ describe('highcharts backend smoke', () => {
     expect(option.series).toHaveLength(2);
     expect(option.series.every((s: any) => s.type === 'column')).toBe(true);
     expect(option.plotOptions?.series?.stacking).toBeUndefined();
+    expect(option.series.map((s: any) => s.name)).toEqual(['East', 'West']);
+    expect(option.series[0].data).toEqual([120, 150]);
   });
 
   it('Stacked Bar Chart → stacked columns', () => {
@@ -271,5 +273,7 @@ describe('highcharts backend smoke', () => {
 
     expect(option.chart.type).toBe('column');
     expect(option.plotOptions.series.stacking).toBe('normal');
+    expect(option.series.map((s: any) => s.name)).toEqual(['East', 'West']);
+    expect(option.series[0].data).toEqual([120, 150]);
   });
 });
