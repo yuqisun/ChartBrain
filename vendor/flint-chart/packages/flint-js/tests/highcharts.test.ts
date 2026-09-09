@@ -276,4 +276,34 @@ describe('highcharts backend smoke', () => {
     expect(option.series.map((s: any) => s.name)).toEqual(['East', 'West']);
     expect(option.series[0].data).toEqual([120, 150]);
   });
+
+  it('Stacked Bar Chart splits by color even when group is also bound', () => {
+    const option = assembleHighcharts({
+      ...CATEGORICAL_BASE,
+      chart_spec: {
+        chartType: 'Stacked Bar Chart',
+        encodings: {
+          x: { field: 'month' }, y: { field: 'revenue' },
+          color: { field: 'region' }, group: { field: 'region' },
+        },
+      },
+    }) as any;
+    expect(option.series.map((s: any) => s.name)).toEqual(['East', 'West']);
+    expect(option.plotOptions.series.stacking).toBe('normal');
+  });
+
+  it('Grouped Bar Chart splits by group even when color is also bound', () => {
+    const option = assembleHighcharts({
+      ...CATEGORICAL_BASE,
+      chart_spec: {
+        chartType: 'Grouped Bar Chart',
+        encodings: {
+          x: { field: 'month' }, y: { field: 'revenue' },
+          group: { field: 'region' }, color: { field: 'region' },
+        },
+      },
+    }) as any;
+    expect(option.series.map((s: any) => s.name)).toEqual(['East', 'West']);
+    expect(option.plotOptions?.series?.stacking).toBeUndefined();
+  });
 });

@@ -56,7 +56,7 @@ function buildBarDef(chart: string, stacked: boolean): ChartTemplateDef {
             // (echarts/templates/bar.ts:709).
             const splitField = stacked
                 ? channelSemantics.color?.field
-                : channelSemantics.group?.field ?? channelSemantics.color?.field;
+                : channelSemantics.group?.field || channelSemantics.color?.field;
             const isHorizontal = categoryAxis === 'y';
             // Highcharts renders the series type, so a horizontal chart needs `bar`
             // (not `column`) on every series or the bars come out vertical.
@@ -115,9 +115,11 @@ function buildBarDef(chart: string, stacked: boolean): ChartTemplateDef {
                 },
             };
 
-            // Stacked variants stack color/group series; grouped variants leave
-            // them side by side (Highcharts' default). Plain category counts do
-            // not stack.
+            // Stacking applies only to the stacked variants, and only when they
+            // split by `color`: a stacked chart fed `group` alone (no `color`)
+            // degrades to a single unstacked series, mirroring ECharts. Grouped
+            // variants stay side by side (Highcharts' default); plain category
+            // counts never stack.
             if (stacked && splitField && !bothDiscrete) {
                 option.plotOptions = { ...(option.plotOptions ?? {}), series: { stacking: 'normal' } };
             }
