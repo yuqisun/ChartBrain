@@ -219,7 +219,14 @@ export const ecPieChartDef: ChartTemplateDef = {
     ],
 };
 
-/** The hole a Donut Chart gets when the caller sets no `innerRadius`. */
+/**
+ * ECharts Donut Chart — a pie with a hole. Mirrors the Highcharts/Vega-Lite
+ * backends' donut handling: property `defaultValue`s are NOT merged into
+ * `chartProperties` at assemble time, so the non-zero default must be injected
+ * here, inside `instantiate`, before delegating to `ecPieChartDef`. Without it,
+ * an absent `innerRadius` would fall through to `?? 0` and yield a solid pie
+ * ('0%' centre). Do not "simplify" this into a property default alone.
+ */
 const DONUT_DEFAULT_INNER_RADIUS = 50;
 
 export const ecDonutChartDef: ChartTemplateDef = {

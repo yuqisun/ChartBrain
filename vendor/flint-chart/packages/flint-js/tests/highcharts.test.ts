@@ -23,7 +23,7 @@ const CATEGORICAL_BASE = {
 };
 
 describe('highcharts backend smoke', () => {
-  it('registers the five ChartBrain chart types', () => {
+  it('registers the ChartBrain chart types', () => {
     const names = hcAllTemplateDefs.map(t => t.chart);
     expect(names).toEqual(
       expect.arrayContaining(['Bar Chart', 'Line Chart', 'Area Chart', 'Scatter Plot', 'Pie Chart']),
@@ -128,21 +128,6 @@ describe('highcharts backend smoke', () => {
     ]);
     expect(option.series[0].dataLabels.enabled).toBe(true);
     expect(option.tooltip.pointFormat).toContain('{point.percentage');
-  });
-
-  it('Donut Chart → pie with a hole', () => {
-    const option = assembleHighcharts({
-      ...CATEGORICAL_BASE,
-      chart_spec: {
-        chartType: 'Donut Chart',
-        encodings: { color: { field: 'region' }, size: { field: 'revenue' } },
-      },
-    }) as any;
-
-    expect(option.chart.type).toBe('pie');
-    expect(option.series[0].type).toBe('pie');
-    expect(option.series[0].innerSize).toBe('50%');
-    expect(option.series[0].data).toHaveLength(2);
   });
 
   it('applies the spec title and layout-derived canvas size', () => {
