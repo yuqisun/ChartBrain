@@ -175,7 +175,8 @@ describe("toHighcharts 各图型", () => {
       },
     );
     expect(opt.chart.type).toBe("pie");
-    expect(opt.series[0].innerSize).toBe("50%");
+    // 只断言孔存在（语义），不锁 vendor 模板的默认值——'50%' 由 vendor 套件钉过
+    expect(opt.series[0].innerSize).toBeDefined();
     expect(opt.series[0].data).toHaveLength(2);
   });
 
@@ -194,23 +195,49 @@ describe("toHighcharts 各图型", () => {
     expect((opt as any).plotOptions?.series?.stacking).toBeUndefined();
   });
 
-  it("every whitelisted chart type is accepted by both adapters", () => {
-    const types = [
-      "bar", "line", "pie", "scatter", "area",
-      "groupedBar", "stackedBar", "donut", "slope", "connectedScatter", "strip",
-    ] as const;
-    for (const type of types) {
+  it("every whitelisted chart type maps to the expected backend shape", () => {
+    // 这 11 个键即 ChartType 联合（types.ts）与 prompt/白名单的又一份副本（既有
+    // 做法，第 6 处；本轮不引入共享模块）。逐类型断言最小输出：若 groupedBar /
+    // stackedBar 的 Flint 名字互换、stackedBar 丢掉堆叠、donut 的 EC 配色回归等，
+    // 这里都会红。
+    const expected: Record<string, { hc: string; ec: string }> = {
+      bar: { hc: "column", ec: "bar" },
+      stackedBar: { hc: "column", ec: "bar" },
+      groupedBar: { hc: "column", ec: "bar" },
+      line: { hc: "line", ec: "line" },
+      slope: { hc: "line", ec: "line" },
+      connectedScatter: { hc: "line", ec: "line" },
+      area: { hc: "area", ec: "line" },
+      scatter: { hc: "scatter", ec: "scatter" },
+      strip: { hc: "scatter", ec: "scatter" },
+      pie: { hc: "pie", ec: "pie" },
+      donut: { hc: "pie", ec: "pie" },
+    };
+    for (const [type, want] of Object.entries(expected)) {
       const spec: ChartSpec = {
         schema_version: 1,
-        chart: { type, title: type },
+        chart: { type: type as ChartSpec["chart"]["type"], title: type },
         encodings: {
           x: { field: "month", value_type: "categorical" },
           y: { field: "revenue", value_type: "numeric" },
           series: { field: "region" },
         },
       };
-      expect(() => toHighcharts(sales, spec)).not.toThrow();
-      expect(() => toECharts(sales, spec)).not.toThrow();
+      const hc = toHighcharts(sales, spec) as any;
+      const ec = toECharts(sales, spec) as any;
+      expect(hc.chart.type).toBe(want.hc);
+      expect(ec.series[0].type).toBe(want.ec);
     }
+    // 堆叠语义单独钉住（图型断言只到 column 级，抓不到 stacking 丢失）
+    const stacked = toHighcharts(sales, {
+      schema_version: 1,
+      chart: { type: "stackedBar", title: "s" },
+      encodings: {
+        x: { field: "month", value_type: "categorical" },
+        y: { field: "revenue", value_type: "numeric" },
+        series: { field: "region" },
+      },
+    }) as any;
+    expect(stacked.plotOptions.series.stacking).toBe("normal");
   });
 });
