@@ -175,8 +175,9 @@ describe("toHighcharts 各图型", () => {
       },
     );
     expect(opt.chart.type).toBe("pie");
-    // 只断言孔存在（语义），不锁 vendor 模板的默认值——'50%' 由 vendor 套件钉过
-    expect(opt.series[0].innerSize).toBeDefined();
+    // 钉死真实值 '50%'：donut 模板默认 innerRadius=50 → innerSize '50%'；若回归成
+    // 实心饼（无内孔）或默认值被改，这里会红（vendor donut.ts:11,21-25 + pie.ts:64-66）
+    expect(opt.series[0].innerSize).toBe("50%");
     expect(opt.series[0].data).toHaveLength(2);
   });
 
