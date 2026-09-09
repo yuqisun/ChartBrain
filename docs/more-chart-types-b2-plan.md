@@ -18,10 +18,10 @@
 2. **ECharts 模板名即契约**：`Lollipop Chart / Waterfall Chart / Funnel Chart / Pyramid Chart / Gauge Chart / Streamgraph / Boxplot / Rose Chart / Radar Chart`（注意 `Boxplot`、`Streamgraph` 无 "Chart" 后缀，来自 `src/echarts/templates/*.ts` 的 `chart:` 字段；HC 注册必须使用完全相同的字符串，否则双端收不到同一个 chartType）。
 3. **中性 spec 不加后端通道**：schema 只允许 `x/y/series`（`additionalProperties: false`）。funnel（x=阶段→Flint `y`、y=数值→Flint `size`）与 gauge（y→Flint `size`）的语义借用只发生在 SDK adapter 内，与 B1 的 pie/donut 例外同构。
 4. **模板不 import Highcharts 运行时**：HC 后端只产 options 对象；模块由消费端按 `_requiredModules` / INTEGRATION 表加载。库侧「缺模块不崩溃」= 编译/装配阶段完全不触碰 HC 运行时。
-5. **HC 模板必须镜像 EC 模板的数值语义**（重复 x 求和、排序、五数概括、均值取整、缺组补 0 等），否则双端差分断言无法通过。
+5. **HC 模板必须镜像 EC 模板的数值语义**（排序、五数概括、均值取整、缺组补 0 等），否则双端差分断言无法通过。注意「重复 x 的处理」随模板各异、须逐一对齐，不能一概而论：bar/area/line 等对重复 x **求和**，而 waterfall 是 **first-row-wins**（`echarts/templates/waterfall.ts:35-36` 用 `table.find` 取首个匹配行）——HC 逐个复制 EC 各自实现（如 Task 2 的 HC 模板即复制 find-first），模板本身不额外对 x 去重。
 6. **沙箱不能跑 npm / vitest / 浏览器**（esbuild 子进程管道 `spawn EPERM`）。权威测试由**用户**执行；沙箱内只跑下方「验证命令速查」中的命令。
 7. **tsc 一律 `--noEmit` 或显式 `--outDir` 到沙箱目录**：不带 `--outDir` 的 emit 会写坏 vendor `dist/`（B1 已踩过坑，破坏了 SDK typecheck）。
-8. **产出物双端对齐**：新增 HC 模板的 `channels` 与对应 EC 模板一致（去掉 facet 通道 `column/row`，HC v1 无 facet，见 FORK.md 范围）。
+8. **产出物双端对齐**：新增 HC 模板的 `channels` 与对应 EC 模板一致，仅去掉 facet 通道 `column/row`（HC v1 无 facet，见 FORK.md 范围）；EC 声明但从不读取的通道（如 boxplot 的 `opacity`）也照单保留，保证两端的通道表可逐项对照。
 
 ## 验证环境（务必先读）
 
@@ -373,29 +373,49 @@ const STREAM_BASE = {
       if (JSON.stringify(mods) !== JSON.stringify(['highcharts/highcharts-more.js'])) {
         throw new Error(`HC _requiredModules=${JSON.stringify(mods)}，期望 ['highcharts/highcharts-more.js']`);
       }
-      // EC Delta series 每个 data 项 value=[i, lo, hi, 原始增量 v]；
-      // HC 原生 waterfall 的普通点 y=增量、总数点 isSum=true（EC 'end' 的复述值被 isSum 吸收）。
-      const ecDeltas = (ec.series ?? []).find((s) => s.name === 'Delta')?.data?.map((d) => d.value[3]);
+      // 语义前提（fixture 固定）：values=[100,20,30,150]，末行 150 = 之前累计（100+20+30）
+      // → resolveTotalsMode 得 'both'：首行 start、末行 end（总额复述）、中间两行 delta。
+      // EC Delta series 为每一行（含锚零的 start/end）都推一条 value=[i, lo, hi, v]，
+      // 因此 EC 的末行也带原始复述值 150；HC 用 isSum 吸收末行。增量序列比较必须排除
+      // EC 末行（否则恒差一项），排除用「行数 - 1」，不用 lo===0——lo===0 同时命中 start
+      // 首行，而 start 首行在 HC 是普通点（y=100）、必须参与比较。
+      const ecDeltaItems = (ec.series ?? []).find((s) => s.name === 'Delta')?.data ?? [];
+      const fixtureVals = WF.map((r) => r.delta); // [100, 20, 30, 150]
+      const endIdx = fixtureVals.length - 1;
+      if (ecDeltaItems.length !== fixtureVals.length) {
+        throw new Error(`EC Delta items=${ecDeltaItems.length} ≠ 行数=${fixtureVals.length}`);
+      }
+      const ecEnd = ecDeltaItems[endIdx];
+      if (ecEnd.value[3] !== fixtureVals[endIdx] || ecEnd.itemStyle?.color !== '#5470c6') {
+        throw new Error('EC waterfall 末行应为 end（startEnd 色且仍携带原始复述值 v）');
+      }
+      const ecDeltas = ecDeltaItems.slice(0, endIdx).map((d) => d.value[3]); // 仅排除 end 末行
       const hcRows = hc.series?.[0]?.data ?? [];
       const hcDeltas = hcRows.filter((d) => d.isSum !== true).map((d) => d.y);
       if (JSON.stringify(hcDeltas) !== JSON.stringify(ecDeltas)) {
         throw new Error(`waterfall 增量序列不一致 HC=${JSON.stringify(hcDeltas)} EC=${JSON.stringify(ecDeltas)}`);
       }
+      // isSum 必须恰好出现在末行（end 唯一），不允许提前出现（防假绿）
       const hcSums = hcRows.map((d, i) => (d.isSum === true ? i : -1)).filter((i) => i >= 0);
-      if (hcSums.length === 0) throw new Error('HC waterfall 应把复述末行标为 isSum（本夹具 totals=both）');
+      if (JSON.stringify(hcSums) !== JSON.stringify([endIdx])) {
+        throw new Error(`HC waterfall 应在末行标 isSum（实际 ${JSON.stringify(hcSums)}）`);
+      }
     },
   },
   {
     label: 'Boxplot',
     input: inp('Boxplot', { x: { field: 'grp' }, y: { field: 'score' } }, BOX),
     hc: 'boxplot', ec: 'boxplot',
+    // generic:false —— HC 点对象 {low,q1,…} 会让通用 yOf（取 d.y ?? d.value）得到 undefined、
+    // EC 数组点取 q1，两者逐点比较必然抛错；本用例由下方 five() 归一比较整体接管。
+    // 保留 HC 对象点形态：HC 原生 boxplot 以 {low,…,outliers} 承载离群点（数组形态无法表达）。
+    generic: false,
     check(hc, ec) {
       const mods = hc._requiredModules;
       if (JSON.stringify(mods) !== JSON.stringify(['highcharts/highcharts-more.js'])) {
         throw new Error(`HC _requiredModules=${JSON.stringify(mods)}，期望 ['highcharts/highcharts-more.js']`);
       }
-      // 完整五数逐类目一致（通用断言只比较了每项的第二元）。
-      // HC 点是对象 {low,q1,median,q3,high,…}；EC 点是数组 [low,q1,median,q3,high]。
+      // 五数逐类目一致（HC 对象 {low,q1,median,q3,high} ↔ EC 数组 [low,q1,median,q3,high]；'-' 空槽两端同义）
       const five = (d) => (d === '-' ? null
         : (Array.isArray(d)
           ? d
@@ -403,6 +423,19 @@ const STREAM_BASE = {
       const a = JSON.stringify(((hc.series?.[0]?.data) ?? []).map(five));
       const b = JSON.stringify(((ec.series ?? []).find((s) => s.type === 'boxplot')?.data ?? []).map(five));
       if (a !== b) throw new Error(`boxplot 五数不一致\n  HC ${a}\n  EC ${b}`);
+      // 离群点契约：本夹具无离群点 → EC 不得追加 Points/custom overlay（boxplot.ts 单系列路径
+      // 仅在 pointData 非空时 push），HC 每个点的 outliers 必须为空数组。
+      const ecBoxSeries = (ec.series ?? []).filter((s) => s.type === 'boxplot');
+      if (ec.series?.some((s) => s.type === 'custom')) {
+        throw new Error('本夹具无离群点，EC 不应产出 custom overlay 系列');
+      }
+      if ((ecBoxSeries.length !== 1) || (ec.series?.length ?? 0) !== 1) {
+        throw new Error(`EC boxplot 应只有 1 个 boxplot 系列（实际 ${JSON.stringify((ec.series ?? []).map((s) => s.type))}）`);
+      }
+      const hcOutliers = ((hc.series?.[0]?.data) ?? []).map((d) => (d && Array.isArray(d.outliers) ? d.outliers : null));
+      if (hcOutliers.some((o) => o === null || o.length > 0)) {
+        throw new Error(`本夹具无离群点，HC outliers 应全为 []（实际 ${JSON.stringify(hcOutliers)}）`);
+      }
     },
   },
   { label: 'Gauge Chart', input: inp('Gauge Chart', { size: { field: 'score' } }, GAUGE_BASE), hc: 'gauge', ec: 'gauge' },
@@ -570,7 +603,7 @@ console.log('\n✅ 模块注册探针全部通过');
 ```
 
 Run: `node D:\work\aichart\.verify\b2-check-modules.cjs`
-Expected: core 8 种 series；随后 10 个 `✓` 断言与末尾 ✅。（依赖项佐证：`lollipop.js` 需要 more→dumbbell→lollipop 链，仅 `dumbbell.js`→`lollipop.js` 抛 `Class extends value undefined is not a constructor`，缺 `dumbbell` 只载 `lollipop.js` 抛 `Cannot read properties of undefined (reading 'prototype')`——均已实测；本批不用该链，故消费端无需加载 `dumbbell.js`（该文件已在本地下载并实测注册）。）`variable-pie.js` / `histogram-bellcurve.js` 已由维护者补下载并在本地实测注册（variablepie / histogram + bellcurve）。
+Expected: core 8 种 series；随后 11 个 `✓` 断言与末尾 ✅。（依赖项佐证：`lollipop.js` 需要 more→dumbbell→lollipop 链，仅 `dumbbell.js`→`lollipop.js` 抛 `Class extends value undefined is not a constructor`，缺 `dumbbell` 只载 `lollipop.js` 抛 `Cannot read properties of undefined (reading 'prototype')`——均已实测；本批不用该链，故消费端无需加载 `dumbbell.js`（该文件已在本地下载并实测注册）。）`variable-pie.js` / `histogram-bellcurve.js` 已由维护者补下载并在本地实测注册（variablepie / histogram + bellcurve）。
 
 - [ ] **Step 7: V1 + V5 回归**
 
@@ -939,7 +972,7 @@ import { hcWaterfallChartDef } from './waterfall';
 'Other': [hcWaterfallChartDef],
 ```
 
-（新增分类键 `'Other'`，与 EC 注册表分类命名一致。）
+（新增分类键 `'Other'`。分类键仅为 UI 分组，两端允许不同，图型归属不要求与 EC 逐键一致：例如 EC 的 Boxplot 在 `'Scatter & Point'`、Rose 在 `'Polar'`，HC 按几何就近归类（Waterfall→Other、Boxplot→Statistical、Gauge→Indicator、Radar/Rose→Polar/Part-to-Whole），不影响双端模板解析与 parity。）
 
 - [ ] **Step 5: 类型检查 + 行为验证**
 
@@ -1083,7 +1116,7 @@ function fiveNumberSummary(
 export const hcBoxplotDef: ChartTemplateDef = {
     chart: 'Boxplot',
     template: { mark: 'boxplot', encoding: {} },
-    channels: ['x', 'y', 'color'],
+    channels: ['x', 'y', 'color', 'opacity'], // EC 声明但从不读 opacity，此处照单保留以逐项对照
     markCognitiveChannel: 'position',
     declareLayoutMode: (cs, table) => {
         const result = detectBandedAxisFromSemantics(cs, table, { preferAxis: 'x' });
@@ -1183,9 +1216,9 @@ import { hcBoxplotDef } from './boxplot';
 - [ ] **Step 5: 类型检查 + 行为验证**
 
 Run: V1（无输出）→ V2 → V3
-Expected: `Boxplot` ✓（通用断言 + 五数归一比较均过）；`Lollipop Chart` / `Waterfall Chart` 保持 ✓。
+Expected: `Boxplot` ✓（该用例 `generic:false`：整体断言由 `check` 接管——五数 `five()` 归一比较 + 无离群点时 EC 不产 overlay 且 HC `outliers` 全为 `[]`）；`Lollipop Chart` / `Waterfall Chart` 保持 ✓。
 
-注：parity 的 Boxplot `check` 里的五数比较同时兼容「HC 对象点 `{low,…}`」与「EC 数组点 `[low,…]`」两种形态——见 Task 0 中 `check` 的实现（若你按本文档逐字实现，Task 0 的 Boxplot `check` 已在 Step 4 使用归一化 `five()` 写法，无需再改）。
+注：parity 的 Boxplot 用例（Task 0）已设 `generic: false`——HC 对象点 `{low,q1,…}` 在通用 `yOf` 下会得到 `undefined`（与 EC 数组点的 `d[1]=q1` 不匹配），因此必须跳过通用逐点比较，由 `five()` 归一比较整体接管；对象点形态保留（HC 原生 boxplot 靠 `{low,…,outliers}` 承载离群点）。
 
 - [ ] **Step 6: 请用户跑权威测试并提交**
 
@@ -1204,7 +1237,7 @@ git commit -m "feat(highcharts): Boxplot 模板（五数概括镜像 EC + 原生
 - Modify: `<vendor>/src/highcharts/templates/index.ts`
 - Test: `<vendor>/tests/highcharts.test.ts`
 
-语义对齐：EC 模板读 `size` 通道，多行取均值（四舍五入 2 位），量程 `min`（默认 0）/`max`（默认对数据最大值向上取整到 1/2/2.5/5×10ⁿ）。HC 端单表盘镜像同一语义（中性 spec 的 gauge 只映射 y→size，无 column 多表盘，B2 不做多表盘）。
+语义对齐：EC 模板读 `size` 通道，多行取均值（四舍五入 2 位），量程 `min`（默认 0）/`max`（默认对数据最大值向上取整到 1/2/5/10 × 10ⁿ——2.5 阶梯是 radar 的 `niceMax` 在用，gauge 不用）。HC 端单表盘镜像同一语义（中性 spec 的 gauge 只映射 y→size，无 column 多表盘，B2 不做多表盘）。
 
 - [ ] **Step 1: 写失败测试**
 
@@ -1245,7 +1278,8 @@ Expected: `Gauge Chart` ✗（`Unknown Highcharts chart type: Gauge Chart`）。
 // Highcharts Gauge Chart — one dial whose value is the rounded mean of the
 // `size` channel over all rows (mirror echarts/templates/gauge.ts: single
 // dial, no `column` faceting in B2). Axis min/max mirror the ECharts template:
-// min defaults to 0; max defaults to the data max rounded up to 1/2/2.5/5×10ⁿ.
+// min defaults to 0; max defaults to the data max rounded up to 1/2/5/10 × 10ⁿ
+// (the 2.5 rung belongs to the radar template's niceMax, not the gauge).
 
 import { ChartTemplateDef, ChartPropertyDef } from '../../core/types';
 
@@ -1801,7 +1835,7 @@ git commit -m "feat(highcharts): Streamgraph 模板（原生 streamgraph，时�
 - Modify: `<vendor>/src/highcharts/templates/index.ts`
 - Modify: `<vendor>/tests/highcharts.test.ts`（含「未知图型样例」改名 + 注册列表补 B2）
 
-**Radar（polar line）**：通道 `x=指标、y=值、color=实体`；每实体一 polyline 系列，每指标值取「组内均值（2 位小数）」，缺指标补 0（镜像 EC radar 模板）；径向 yAxis `0..max`，`max = niceMax(全部值中的最大值)`（EC 按指标各自 niceMax 归一，HC 只有单一径向尺度——视觉上小量纲指标会相对内收，属已接受的差异，见风险表）。需要 `highcharts-more.js`（polar）。
+**Radar（polar line）**：通道 `x=指标、y=值、color=实体`；每实体一 polyline 系列，每指标值取「组内均值（2 位小数）」，缺指标补 0（镜像 EC radar 模板）；径向 yAxis `0..max`，`max = niceMax(全部值中的最大值)`（EC 按指标各自 niceMax 归一，HC 只有单一径向尺度——视觉上小量纲指标会相对内收，属已接受的差异，见风险表）。**不填充**：HC 用极坐标 line（无 areaStyle），而 EC 默认 `filled: true`（fillOpacity 0.3）——填充差异见风险表（含回退方案）。需要 `highcharts-more.js`（polar）。
 
 **Rose（原生 `variablepie`）**：x=类目、y=数值（B2 单系列，不做叠堆）。映射与语义：
 - HC data 项 `{ name: 类目, y: 1, z: 原始值 }`——`variablepie` 中 y 决定扇区**角度**、z 决定**半径**；玫瑰（nightingale）约定等角、半径随值，故 y 恒为 1（各扇区等宽），z = 该类目聚合值（HC 按 sqrt(z) 缩放半径 → 面积 ∝ z，与 EC 端「sqrt 半径、面积 ∝ 值」编码一致，见风险表）。
@@ -2335,17 +2369,18 @@ describe("validateChannels: B2 图型必需通道", () => {
 
 （其中 `xy2series` 直接复用文件里已有的 `series` 对象写法：`const xy2series = { series: { field: "region", value_type: "categorical" as const } };`。）
 
-> 校验器是**纯函数**，不依赖 vendor dist——上面 3 个新 it 在沙箱 V8 即可全绿（连同既有 44 项 = 47 passed）。
+> 校验器是**纯函数**，不依赖 vendor dist——3 个新 it 本身可离线跑通；但 V8 全量还包含 Step 5 的 funnel/gauge 转换用例（依赖新模板的 dist），重建前整体是 2 红 47 绿，见命令速查 V8 注。
 
-- [ ] **Step 7: 沙箱验证（含白名单守卫）**
+- [ ] **Step 7: 沙箱验证（含白名单守卫——本步 V7 红是预期）**
 
-Run: V4（无输出）→ **V7**（期望 `✅ 5 处白名单一致（20 种）`）→ V1/V2/V3（parity 仍 20 行全绿——适配器/校验器改动不影响 parity 直连 Flint 模板）。
-Expected: 全部通过。SDK 的**行为**用例（Step 5 的 funnel/gauge、Step 6 校验器用例）需 vendor `dist/` 重建后在 V8/权威测试中验证：校验器用例沙箱可跑（纯函数），funnel/gauge 转换用例沙箱内为红（stale dist 无新模板），见命令速查 V8 注。
+Run: V4（无输出）→ **V7** → V1/V2/V3（parity 仍 20 行全绿——适配器/校验器改动不影响 parity 直连 Flint 模板）。
+Expected: **V7 红是预期**：`check-chart-types.mjs` 会打印 prompt.py 缺 9 种（schema/types/adapters 已是 20 种，prompt.py 规则 1 仍是 11 种——五处白名单中唯一滞后处）。该行由 Task 9 Step 1 补齐，Task 9 Step 3 的 V7 转绿（本 Task 的 Files 不包含 `prompt.py`，提交信息与此一致）。SDK 的**行为**用例（Step 5 的 funnel/gauge、Step 6 校验器用例）需 vendor `dist/` 重建后在 V8/权威测试中验证：校验器用例沙箱可跑（纯函数），funnel/gauge 转换用例沙箱内为红（stale dist 无新模板），见命令速查 V8 注。
 
 - [ ] **Step 8: 请用户跑权威测试并提交**
 
-请用户执行：`cd <repo>\vendor\flint-chart\packages\flint-js; npm run build`（重建 dist，SDK 经 file: 链接消费）→ `cd <repo>\sdk; npm run typecheck; npm test` → 再回沙箱或用户环境跑 `node scripts\check-chart-types.mjs`（20 种）。
-Expected: typecheck 无输出；sdk npm test 全绿（44 基线 + 5 新增 it = 49 passed：converter +2、validate +3）；check-chart-types `✅ 5 处白名单一致（20 种）`。
+请用户执行：`cd <repo>\vendor\flint-chart\packages\flint-js; npm run build`（重建 dist，SDK 经 file: 链接消费）→ `cd <repo>\sdk; npm run typecheck; npm test`
+Expected: typecheck 无输出；sdk npm test 全绿（44 基线 + 5 新增 it = 49 passed：converter +2、validate +3）。
+注：`check-chart-types.mjs` 在 Task 8 内仍是红（prompt.py 规则 1 尚未更新，见 Step 7 预期），由 Task 9 Step 1 补齐后转绿——本 Task 的提交不含 prompt.py，与该预期一致。
 
 ```bash
 git add specs/chart-spec.schema.json sdk/src/types.ts sdk/src/converter/highcharts.ts sdk/src/converter/echarts.ts sdk/src/converter/validate.ts sdk/tests/converter.test.ts sdk/tests/validate.test.ts
@@ -2365,9 +2400,11 @@ git commit -m "feat(spec): 白名单扩至 20 种图型（B2 九个）+ 双端�
 1. chart.type must be one of: bar | line | pie | scatter | area | groupedBar | stackedBar | donut | slope | connectedScatter | strip | lollipop | waterfall | funnel | pyramid | gauge | streamgraph | boxplot | rose | radar.
 ```
 
+（这是五处白名单同步的最后一步：schema / `ChartType` union / 两个 adapter 已在 Task 8 更新；此行补齐后 `node scripts\check-chart-types.mjs` 由红转绿（Task 9 Step 3 验证）。）
+
 - [ ] **Step 2: 追加 9 条 few-shot**
 
-在 `build_user_prompt` 的 `few_shot_examples` 列表末尾（`strip` 条目 `},` 之后、收尾 `],` 之前）插入以下条目。结构与既有条目一致（`query` / `columns` / `chart_spec`）；缩进风格可微调，但字段与 L1 schema 必须逐字合法（`server/tests/test_prompt.py` 会对每条跑 `validate_spec`）。
+在 `build_user_prompt` 的 `few_shot_examples` 列表末尾（`strip` 条目 `},` 之后、收尾 `],` 之前）插入以下条目。结构与既有条目一致（`query` / `columns` / `chart_spec`）；缩进风格可微调，但字段与 L1 schema 必须逐字合法（`server/tests/test_prompt.py` 会对每条跑 `validate_spec`）。文件现含 **10** 条既有示例（含 bar/line×2/groupedBar/stackedBar/pie/donut/slope/connectedScatter/strip），本轮 **+9 → 共 19 条**。
 
 lollipop（x/y + series 拆分组，先按 month+region 聚合）：
 
@@ -2636,7 +2673,7 @@ radar（x = 指标名、y = 值、series = 实体；每（实体 × 指标）一
 
 - [ ] **Step 3: 沙箱验证 + 请用户跑权威测试**
 
-Run: V6 → 期望 37 passed（守卫测试 `test_prompt_whitelist_matches_schema_enum` 自动覆盖「prompt 白名单 == schema enum（20）」；`test_every_few_shot_chart_spec_passes_l1` 对 18 条 few-shot 全量校验）；再跑 **V7** → 期望 `✅ 5 处白名单一致（20 种）`。
+Run: V6 → 期望 37 passed（守卫测试 `test_prompt_whitelist_matches_schema_enum` 自动覆盖「prompt 白名单 == schema enum（20）」；`test_every_few_shot_chart_spec_passes_l1` 对 19 条 few-shot（既有 10 + 新增 9）全量校验）；再跑 **V7** → 期望 `✅ 5 处白名单一致（20 种）`（Task 8 里 V7 红，本步转绿）。
 Expected: 37 passed；白名单守卫全绿。
 
 ```bash
@@ -2884,6 +2921,8 @@ for (const { label, spec, data = rows } of CASES) {
 
 （共享 `rows` 只有 month/region/revenue 时，funnel/pyramid/gauge/waterfall/boxplot/radar 用各自的 `data`；`data` 字段缺失的用例默认用 `rows`。9 个用例 spec 的 `encodings` 均满足 Task 8 扩展后的 `REQUIRED_CHANNELS`——gauge 只有 `y`，其余均有 `x`+`y`，series 可选——`buildHighcharts`/`buildECharts` 入口先过校验器，不会误抛。）
 
+> 注（函数型 options 在离线页的局限）：`offline.mjs` 用 `JSON.stringify` 内联 HC options（offline.mjs:283–284），**函数值会被丢弃**——HC 模板里 pyramid x 轴的 abs-label formatter、streamgraph 的槽位→类目名 formatter 都是函数（见 Task 5/6 模板），生成页面中这两处轴刻度会退回原始数值/序号。仅演示页局限，后端产物不受影响；如需在页面上回映可读标签，后续可在生成前对 options 做轻量预处理（不在 B2 范围）。
+
 - [ ] **Step 2: 沙箱语法检查**
 
 Run: `node --check examples/dual-demo/offline.mjs`
@@ -2944,7 +2983,7 @@ git commit -m "docs: B2 模块机制（_requiredModules 有序加载）+ 模块�
 
 - [ ] **Step 1: 沙箱全量验证**
 
-Run: V1 → V2 → V3（期望 20 passed, 0 failed）→ V4 → V5（期望 `files=56 passed=1135 failed=0` + ✅）→ V6（37 passed）→ **V7**（期望 `✅ 5 处白名单一致（20 种）`）→ V8（期望 SDK suite 在 44 基线基础上 +5 it = 49 passed；其中 funnel/gauge 转换用例需用户重建 dist 后才绿，沙箱内以「44 + 校验器 3 例」为界）→ V9（期望 20/20 用例 ok、0 external refs）→ 模块注册探针（Task 0 Step 6 的 `b2-check-modules.cjs`，期望 10 个 `✓` + ✅）
+Run: V1 → V2 → V3（期望 20 passed, 0 failed）→ V4 → V5（期望 `files=56 passed=1135 failed=0` + ✅）→ V6（37 passed）→ **V7**（期望 `✅ 5 处白名单一致（20 种）`）→ V8（期望 SDK suite 在 44 基线基础上 +5 it = 49 passed；其中 funnel/gauge 转换用例需用户重建 dist 后才绿，沙箱内以「44 + 校验器 3 例」为界）→ 模块注册探针（Task 0 Step 6 的 `b2-check-modules.cjs`，期望 11 个 `✓` + ✅）→ V9 留到 Step 3（依赖该步重新生成的 20 用例页面）
 Expected: 全部通过。
 
 - [ ] **Step 2: 请用户跑全部权威测试**
@@ -2965,6 +3004,11 @@ cd D:\work\aichart\ChartBrain\examples\dual-demo
 node offline.mjs
 start dual-offline.html
 ```
+
+重新生成页面后先跑静态渲染门禁（Step 1 的 V9 依赖本步产出的 20 用例页面）：
+
+Run: `node D:\work\aichart\.verify\check-html-options.cjs`
+Expected: Highcharts.chart / echarts 各 20 次全部 ok、`external CDN refs: 0`、`✅ every case renders through both backends`（页面内嵌 HC options 的函数型 `labels.formatter` 会被 JSON.stringify 丢弃——见 Task 10 注——V9 只断言每例能渲染与点数>0，不校验该格式化文本）。
 
 人工核对 20 组用例左右两侧；B2 新增 9 组重点核对：
 1. Lollipop 茎/点是否对齐类目、圆点颜色是否按 region 区分；
@@ -2992,7 +3036,7 @@ git commit -m "chore: B2 验收通过（20 图型双端一致）" || echo "无�
 2. **模块（有序契约 + 真实注册）**：`hcRequiredModules` 返回与 INTEGRATION 表一致，**数组语义 = 加载顺序**；需要模块的模板在输出上携带 `_requiredModules`；复合模板（lollipop/pyramid）不携带；库不含任何 HC 运行时 import。沙箱探针（Task 0 Step 6）用真实 12.6.0 bundle 断言：`highcharts-more` → `waterfall/boxplot/gauge/arearange` 注册 + Chart.prototype 出现 polar/radial 成员（radar）；`funnel.js` → `funnel/pyramid`；`streamgraph.js` → `streamgraph`；`variable-pie.js` → `variablepie`；`histogram-bellcurve.js` → `histogram`/`bellcurve`（B3 预留）。
 3. **双端一致**：`scripts/chart-parity.mjs` 20 行全绿（含 B2 九行的逐类型 `check`）；每个 B2 用例的 HC/EC series 类型、逐点数值（或经自定义断言映射后的数值）一致。
 4. **契约五处同步 + 校验器 + 守卫**：schema enum、`sdk/src/types.ts`、两个 adapter 的 `FLINT_CHART_TYPE`/通道映射全部含 9 个新图型；`HighchartsOption` 有 `_requiredModules` 可选字段；`sdk/src/converter/validate.ts` 的 `REQUIRED_CHANNELS` 覆盖 9 个新图型（gauge 仅 `y`，其余 `x`+`y`，`series` 一律可选）；`node scripts\check-chart-types.mjs` 输出 `✅ 5 处白名单一致（20 种）`。
-5. **prompt**：白名单规则 1 与 schema enum 集合相等（守卫测试断言）；18 条 few-shot 全部过 L1。
+5. **prompt**：白名单规则 1 与 schema enum 集合相等（守卫测试断言）；19 条 few-shot（既有 10 + 新增 9）全部过 L1。
 6. **权威测试全绿**（用户执行）：vendor `npm run build && npm test`；sdk `npm run typecheck && npm test`（44 基线 +5 = 49 passed）；server `pytest` 37 passed。
 7. **示例与文档**：`offline.mjs` 生成的对比页覆盖 20 个图型、模块按序内联/兜底，左右两侧都能渲染；`docs/INTEGRATION.md` 模块表（修订既有已验证表：lollipop/pyramid 复合零模块、rose = 实测 `variablepie`、histogram 行注明 B3 决策）与 `_requiredModules` 契约更新。
 8. **回滚**：每 Task 独立提交；契约与模板同批提交（spec 放行但后端无模板 = `Unknown … chart type` 报错；白名单五处 + `REQUIRED_CHANNELS` 不同步会被 `check-chart-types`/校验器测试拦下）。
@@ -3003,6 +3047,7 @@ git commit -m "chore: B2 验收通过（20 图型双端一致）" || echo "无�
 |---|---|---|
 | HC 原生 `waterfall` 的 `isSum`（无 y 点画到「当前累计」）与 EC `end`（`top=cumulative[i-1]`）在个别边界（如负数对账）视觉偏差 | 中 | parity 已断言增量序列与 isSum 位置；若目测发现对账边界不对，回退为把 `end` 行按普通增量 `y=复述值` 渲染并接受一个全柱差异，或该数据形状改用 `chartProperties.totals` 显式覆盖 |
 | HC radar 单一径向尺度 vs EC 按指标归一：量纲差异大的指标在 HC 会内收 | 中 | 已声明为接受差异并在演示页核对；若不可接受，回退方案 = HC 端对每指标除以其 niceMax 后乘全局 max（即自绘归一化），并在 tooltip 显示原始值（B2 后补丁，不动 spec） |
+| HC radar 不填充（极坐标 line）vs EC 默认填充（`filled` 默认 true、fillOpacity 0.3） | 低 | 已声明：无填充在多层多边形叠加时更清晰；若需贴近 EC，把 radar 系列 type 改为 `area` 并设 `fillOpacity: 0.3`（数据与 parity 断言不变，仅观感；B2 后补丁） |
 | HC rose（`variablepie`）半径/面积内部换算未离线实测（等角 y=1 + z=原始值是否与 EC sqrt 半径面积编码观感一致） | 中 | parity 按 name→原始值比对（与半径换算无关）；Task 11 目测核对；若观感不可接受，回退为 EC 同编码：把 `z` 改传 `sqrt(value)`（面积 ∝ 值不变）或整体改回「极坐标 column + 线性半径」并在 parity/文档同步 |
 | Boxplot 离群点视觉：EC 额外 custom 点系列 vs HC 原生 `outliers` | 低 | parity 只比对 box 五数；若离群点观感不一致，HC 端把 `outliers` 列表也输出为独立 scatter overlay（与茎/点复合同构），并更新 parity 检查 |
 | `lollipop`/`pyramid` 复合模板在 HC 端与「原生系列」的 hover/图例行为不同（茎不可 hover、无每点图例） | 低 | 已知取舍（EC 端同为复合）；若 hover 必须，把茎也开 `enableMouseTracking: true` 并按点着色 |
