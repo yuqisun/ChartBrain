@@ -244,4 +244,32 @@ describe('highcharts backend smoke', () => {
       chart_spec: { chartType: 'Radar Chart', encodings: { x: { field: 'month' } } },
     })).toThrow(/Unknown Highcharts chart type/);
   });
+
+  it('Grouped Bar Chart → side-by-side columns, no stacking', () => {
+    const option = assembleHighcharts({
+      ...CATEGORICAL_BASE,
+      chart_spec: {
+        chartType: 'Grouped Bar Chart',
+        encodings: { x: { field: 'month' }, y: { field: 'revenue' }, group: { field: 'region' } },
+      },
+    }) as any;
+
+    expect(option.chart.type).toBe('column');
+    expect(option.series).toHaveLength(2);
+    expect(option.series.every((s: any) => s.type === 'column')).toBe(true);
+    expect(option.plotOptions?.series?.stacking).toBeUndefined();
+  });
+
+  it('Stacked Bar Chart → stacked columns', () => {
+    const option = assembleHighcharts({
+      ...CATEGORICAL_BASE,
+      chart_spec: {
+        chartType: 'Stacked Bar Chart',
+        encodings: { x: { field: 'month' }, y: { field: 'revenue' }, color: { field: 'region' } },
+      },
+    }) as any;
+
+    expect(option.chart.type).toBe('column');
+    expect(option.plotOptions.series.stacking).toBe('normal');
+  });
 });

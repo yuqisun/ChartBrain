@@ -4,7 +4,7 @@
 // Highcharts template registry.
 
 import { ChartTemplateDef } from '../../core/types';
-import { hcBarChartDef } from './bar';
+import { hcBarChartDef, hcGroupedBarChartDef, hcStackedBarChartDef } from './bar';
 import { hcLineChartDef } from './line';
 import { hcAreaChartDef } from './area';
 import { hcScatterPlotDef } from './scatter';
@@ -13,7 +13,7 @@ import { hcPieChartDef } from './pie';
 /** Highcharts chart template definitions, grouped by category. */
 export const hcTemplateDefs: { [key: string]: ChartTemplateDef[] } = {
     'Scatter & Point': [hcScatterPlotDef],
-    'Bar':             [hcBarChartDef],
+    'Bar':             [hcBarChartDef, hcGroupedBarChartDef, hcStackedBarChartDef],
     'Line & Area':     [hcLineChartDef, hcAreaChartDef],
     'Part-to-Whole':   [hcPieChartDef],
 };
