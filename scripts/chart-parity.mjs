@@ -97,8 +97,12 @@ const CASES = [
         throw new Error(`HC donut series[0].innerSize=${JSON.stringify(inner)}，期望定义内孔（如 '45%'）`);
       }
       const er = ec.series?.[0]?.radius;
-      if (!Array.isArray(er) || er[0] === '0%') {
-        throw new Error(`EC donut series[0].radius=${JSON.stringify(er)}，期望形如 ['50%','…px'] 且首项 ≠ '0%'`);
+      // 收紧：内径必须是非零数值。radius[0] 形如 '50%' / '96px'，去掉 '%'/'px'
+      // 后缀后若为数值 0（0、'0'、'0%'、'0px'）仍是实心饼，必须拒绝。
+      const holeText = Array.isArray(er) && er.length > 0 ? String(er[0]).replace(/%$/, '').replace(/px$/, '') : null;
+      const hole = holeText != null ? Number.parseFloat(holeText) : NaN;
+      if (!Array.isArray(er) || er.length === 0 || !Number.isFinite(hole) || hole === 0) {
+        throw new Error(`EC donut series[0].radius=${JSON.stringify(er)}，期望形如 ['50%','…px'] 且首项（去 %/px 后缀后）为非零数值`);
       }
     },
   },
