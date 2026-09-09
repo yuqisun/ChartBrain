@@ -2,8 +2,7 @@
 // Licensed under the MIT License.
 
 import { describe, it, expect } from 'vitest';
-import { assembleHighcharts } from '../src';
-import { assembleECharts } from '../src';
+import { assembleHighcharts, assembleECharts } from '../src';
 
 const DATA = [
   { region: 'East', revenue: 120 },
