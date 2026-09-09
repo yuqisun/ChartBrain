@@ -153,9 +153,14 @@ UX 建议：输入框 + 常用问题建议（见 `examples/dual-demo/QUESTIONS.m
 
 自 D15 起 Highcharts 配置由 vendored flint-js 编译器产出（不再是手写映射）。稳定部分：
 
-> SDK 在调用任一后端前会先做**必需通道校验**（`sdk/src/converter/validate.ts`）：按图型
-> 校验 `encodings` 是否带齐 x/y/group/color 等必需通道，缺通道的 spec 在本地即被拒绝并报
-> 可读错误，不会进入 flint 编译。
+> ⚠️ **缺通道会抛错，而不是产出坏配置**：`buildHighcharts` / `buildECharts`（经
+> `toHighcharts` / `toECharts`）在进入后端编译前先做必需通道校验
+> （`sdk/src/converter/validate.ts`）。11 种图型都要求 `encodings.x` 与 `encodings.y` 在场——
+> pie/donut 中 x=分类（映射颜色）、y=数值（映射大小），其余图型即坐标轴两通道；
+> `encodings.series` 对所有图型都可选（有则分组/堆叠，无则单系列；pie/donut 多传 series 会被
+> 忽略，不改变输出）。缺失时抛 `Error`，消息形如 `groupedBar 需要 x 与 y 通道，缺少: y`，
+> 消费端应捕获并提示用户（改述/反馈），不要渲染空图。校验只看通道存在性、不看数据：
+> 0 行数据 + 通道齐全的 spec 正常返回空系列配置，不抛错。
 
 | 键 | 含义 |
 |---|---|
