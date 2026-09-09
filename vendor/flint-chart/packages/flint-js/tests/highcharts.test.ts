@@ -375,4 +375,50 @@ describe('highcharts backend smoke', () => {
     expect(option.series.map((s: any) => s.name)).toEqual(['East', 'West']);
     expect(option.plotOptions?.series?.stacking).toBeUndefined();
   });
+
+  it('Strip Plot → deterministic jitter within each category band', () => {
+    const input = {
+      data: {
+        values: [
+          { region: 'East', revenue: 120 },
+          { region: 'East', revenue: 150 },
+          { region: 'West', revenue: 90 },
+        ],
+      },
+      semantic_types: { region: 'Country', revenue: 'Price' },
+      chart_spec: {
+        chartType: 'Strip Plot',
+        encodings: { x: { field: 'region' }, y: { field: 'revenue' } },
+      },
+    } as any;
+
+    const a = assembleHighcharts(input) as any;
+    const b = assembleHighcharts(input) as any;
+
+    expect(a.chart.type).toBe('scatter');
+    expect(a.series[0].data).toHaveLength(3);
+    expect(a.series[0].data).toEqual(b.series[0].data);
+    // y 值保持原值；x 被抖动到类目带内
+    expect(a.series[0].data.map((p: any) => p[1])).toEqual([120, 150, 90]);
+  });
+
+  it('Connected Scatter Plot keeps duplicate x points instead of summing them', () => {
+    const option = assembleHighcharts({
+      data: {
+        values: [
+          { x: 1, y: 10, g: 'A' },
+          { x: 1, y: 20, g: 'A' },
+          { x: 2, y: 30, g: 'A' },
+        ],
+      },
+      semantic_types: { x: 'Quantity', y: 'Quantity', g: 'Category' },
+      chart_spec: {
+        chartType: 'Connected Scatter Plot',
+        encodings: { x: { field: 'x' }, y: { field: 'y' }, color: { field: 'g' } },
+      },
+    }) as any;
+
+    // line 模板会把两个 x=1 的行合并成 [1,30]；连线散点必须保留两个点
+    expect(option.series[0].data).toEqual([[1, 10], [1, 20], [2, 30]]);
+  });
 });

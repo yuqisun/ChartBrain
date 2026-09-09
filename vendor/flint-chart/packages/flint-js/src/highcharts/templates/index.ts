@@ -10,12 +10,13 @@ import { hcAreaChartDef } from './area';
 import { hcSlopeChartDef } from './slope';
 import { hcScatterPlotDef } from './scatter';
 import { hcConnectedScatterDef } from './connected-scatter';
+import { hcStripPlotDef } from './strip';
 import { hcPieChartDef } from './pie';
 import { hcDonutChartDef } from './donut';
 
 /** Highcharts chart template definitions, grouped by category. */
 export const hcTemplateDefs: { [key: string]: ChartTemplateDef[] } = {
-    'Scatter & Point': [hcScatterPlotDef, hcConnectedScatterDef],
+    'Scatter & Point': [hcScatterPlotDef, hcConnectedScatterDef, hcStripPlotDef],
     'Bar':             [hcBarChartDef, hcGroupedBarChartDef, hcStackedBarChartDef],
     'Line & Area':     [hcLineChartDef, hcAreaChartDef, hcSlopeChartDef],
     'Part-to-Whole':   [hcPieChartDef, hcDonutChartDef],
