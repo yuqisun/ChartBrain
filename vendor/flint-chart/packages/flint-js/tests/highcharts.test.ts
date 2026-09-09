@@ -431,4 +431,24 @@ describe('highcharts backend smoke', () => {
     expect(xs[0]).not.toBe(xs[1]); // 同带内两点的 x 必须不同（否则就是堆叠）
   });
 
+  it('Strip Plot → grouped series jitter continues across groups', () => {
+    const option = assembleHighcharts({
+      data: {
+        values: [
+          { region: 'East', g: 'A', revenue: 120 },
+          { region: 'East', g: 'B', revenue: 130 },
+        ],
+      },
+      semantic_types: { region: 'Country', g: 'Category', revenue: 'Price' },
+      chart_spec: {
+        chartType: 'Strip Plot',
+        encodings: { x: { field: 'region' }, y: { field: 'revenue' }, color: { field: 'g' } },
+      },
+    }) as any;
+
+    expect(option.series).toHaveLength(2);
+    // 两个分组在同一个带内，首行 x 不得相同（相同即退化为竖向堆叠）
+    expect(option.series[0].data[0][0]).not.toBe(option.series[1].data[0][0]);
+  });
+
 });

@@ -3,7 +3,9 @@
  * 服务端产出的 spec 均满足这里声明的结构；SDK 按此结构确定性执行。
  */
 
-export type ChartType = "bar" | "line" | "pie" | "scatter" | "area";
+export type ChartType =
+  | "bar" | "line" | "pie" | "scatter" | "area"
+  | "groupedBar" | "stackedBar" | "donut" | "slope" | "connectedScatter" | "strip";
 
 export type ValueType = "categorical" | "numeric" | "temporal";
 

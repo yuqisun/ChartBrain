@@ -5,9 +5,10 @@
  * ChartAssemblyInput，交给 flint-chart 编译成 Highcharts options。
  *
  * 映射：
- * - chart.type → Flint chartType（bar/line/area/scatter/pie 五种白名单）
+ * - chart.type → Flint chartType（bar/line/area/scatter/pie + B1 六个：共 11 种白名单）
  * - encodings.x/y → x/y；encodings.series → color（系列拆分）
- * - pie 例外：中性 spec 用 x=分类、y=数值，而 Flint 的饼图模板读 color=分类、size=数值
+ * - pie/donut 例外：中性 spec 用 x=分类、y=数值，而 Flint 的饼/环模板读 color=分类、size=数值
+ * - groupedBar 例外：series 必须走 Flint 的 group 通道（并排），而非 color（堆叠）
  * - 数据直接 inline（Flint 需要 data.values 在场，D12 决定如此）
  * - 未传 semantic_types，由 Flint 从数据推断（后续可细化）
  */
@@ -22,6 +23,12 @@ const FLINT_CHART_TYPE: Record<ChartType, string> = {
   pie: "Pie Chart",
   scatter: "Scatter Plot",
   area: "Area Chart",
+  groupedBar: "Grouped Bar Chart",
+  stackedBar: "Stacked Bar Chart",
+  donut: "Donut Chart",
+  slope: "Slope Chart",
+  connectedScatter: "Connected Scatter Plot",
+  strip: "Strip Plot",
 };
 
 export interface HighchartsSeries {
@@ -59,28 +66,42 @@ export interface HighchartsOption {
 
 type FlintInput = Parameters<typeof assembleHighcharts>[0];
 
-/** 中性 spec + 变换后的最终表 → Highcharts options。 */
-export function toHighcharts(data: Row[], spec: ChartSpec): HighchartsOption {
+/** 图型 → 通道映射规则（默认 x/y/series→color，特例见下）。 */
+function buildEncodings(spec: ChartSpec): Record<string, { field: string }> {
   const encodings: Record<string, { field: string }> = {};
   const x = spec.encodings.x;
   const y = spec.encodings.y;
   const s = spec.encodings.series;
 
-  if (spec.chart.type === "pie") {
-    if (x) encodings.color = { field: x.field };
-    if (y) encodings.size = { field: y.field };
-  } else {
-    if (x) encodings.x = { field: x.field };
-    if (y) encodings.y = { field: y.field };
-    if (s) encodings.color = { field: s.field };
+  switch (spec.chart.type) {
+    case "pie":
+    case "donut":
+      // 饼/环：x=分类（color），y=度量（size）
+      if (x) encodings.color = { field: x.field };
+      if (y) encodings.size = { field: y.field };
+      break;
+    case "groupedBar":
+      // 分组柱：并排靠 group 通道
+      if (x) encodings.x = { field: x.field };
+      if (y) encodings.y = { field: y.field };
+      if (s) encodings.group = { field: s.field };
+      break;
+    default:
+      if (x) encodings.x = { field: x.field };
+      if (y) encodings.y = { field: y.field };
+      if (s) encodings.color = { field: s.field };
   }
+  return encodings;
+}
 
+/** 中性 spec + 变换后的最终表 → Highcharts options。 */
+export function toHighcharts(data: Row[], spec: ChartSpec): HighchartsOption {
   const input: FlintInput = {
     data: { values: data },
     chart_spec: {
       chartType: FLINT_CHART_TYPE[spec.chart.type],
       title: spec.chart.title ?? "",
-      encodings,
+      encodings: buildEncodings(spec),
       baseSize: { width: 640, height: 400 },
     },
   } as FlintInput;
