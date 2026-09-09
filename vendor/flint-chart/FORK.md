@@ -73,6 +73,12 @@ transitively through the `site` workspace (which is not vendored), so without
 these entries a standalone `npm test` fails on that one file with
 `Cannot find package 'vega'`.
 
+This directory's `package-lock.json` is **not committed** (see `.gitignore`).
+Upstream has no lock here, and a committed lock would pin whichever registry it
+was generated against — the local install used `registry.npmmirror.com`, while
+this repo's other lockfiles use `registry.npmjs.org`. CI runs `npm install`, so
+each environment resolves through its own configured registry.
+
 `ChartBrain/sdk` depends on this directory via
 `"flint-chart": "file:../vendor/flint-chart/packages/flint-js"`, so the SDK
 resolves the vendored build through a symlink. **Rebuild after changing this
