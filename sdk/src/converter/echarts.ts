@@ -7,6 +7,8 @@
  * 映射（spike）：
  * - chart.type → Flint chartType（ECharts 模板名，已从源码核实）
  * - encodings.x/y → x/y；encodings.series → color（系列拆分）
+ * - pie/donut 例外：中性 spec 用 x=分类、y=数值，而 Flint 的饼/环模板读 color=分类、size=数值
+ * - groupedBar 例外：series 必须走 Flint 的 group 通道（并排），而非 color（堆叠）
  * - 数据直接 inline（Flint 需要 data.values 在场，D12 决定如此）
  * - 未传 semantic_types，由 Flint 从数据推断（后续可细化）
  */
@@ -14,6 +16,7 @@
 import { assembleECharts } from "flint-chart";
 
 import type { ChartSpec, ChartType, Row } from "../types.js";
+import { validateChannels } from "./validate.js";
 
 const FLINT_CHART_TYPE: Record<ChartType, string> = {
   bar: "Bar Chart",
@@ -21,21 +24,35 @@ const FLINT_CHART_TYPE: Record<ChartType, string> = {
   pie: "Pie Chart",
   scatter: "Scatter Plot",
   area: "Area Chart",
+  groupedBar: "Grouped Bar Chart",
+  stackedBar: "Stacked Bar Chart",
+  donut: "Donut Chart",
+  slope: "Slope Chart",
+  connectedScatter: "Connected Scatter Plot",
+  strip: "Strip Plot",
 };
 
 type FlintInput = Parameters<typeof assembleECharts>[0];
 
 /** 中性 spec + 变换后的最终表 → ECharts option（对象形状由 Flint 决定）。 */
 export function toECharts(data: Row[], spec: ChartSpec): unknown {
+  // M3：缺必需通道时在此抛错（双端一致），不许坏 spec 漏到后端静默画成别的图
+  validateChannels(spec);
+
   const encodings: Record<string, { field: string }> = {};
   const x = spec.encodings.x;
   const y = spec.encodings.y;
   const s = spec.encodings.series;
 
-  if (spec.chart.type === "pie") {
-    // Flint 的饼图模板读 color（扇区）+ size（度量），而中性 spec 用 x=分类、y=数值。
+  if (spec.chart.type === "pie" || spec.chart.type === "donut") {
+    // Flint 的饼/环模板读 color（扇区）+ size（度量），而中性 spec 用 x=分类、y=数值。
     if (x) encodings.color = { field: x.field };
     if (y) encodings.size = { field: y.field };
+  } else if (spec.chart.type === "groupedBar") {
+    // 分组柱：并排靠 group 通道
+    if (x) encodings.x = { field: x.field };
+    if (y) encodings.y = { field: y.field };
+    if (s) encodings.group = { field: s.field };
   } else {
     if (x) encodings.x = { field: x.field };
     if (y) encodings.y = { field: y.field };

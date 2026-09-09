@@ -144,7 +144,7 @@ UX 建议：输入框 + 常用问题建议（见 `examples/dual-demo/QUESTIONS.m
 ## 附录 B · 常见问题
 
 - **数据会发给谁？** server 只收 `columns` + `data_sample`（样例可脱敏）；全量真实数据只在你的进程里被 SDK 处理。
-- **支持哪些图型？** 当前 5 种：bar/line/pie/scatter/area（含多系列拆分）。超出会诚实拒绝而非硬凑。
+- **支持哪些图型？** 当前 11 种：bar/line/pie/scatter/area + groupedBar/stackedBar/donut/slope/connectedScatter/strip（含多系列拆分）。超出会诚实拒绝而非硬凑。
 - **"占比/环比"这类诉求怎么办？** 当前会 422 澄清；属于未来 `derive` 派生列能力（路线图前瞻）。
 - **成本？** 每次查询 = 1 次 LLM 调用（+1 次失败修复调用）。server 已内置超时/重试与错误分类。
 - **多轮改图？** 当前一次一问一图；多轮会话（"把柱状图换成折线"）属路线图前瞻项。
@@ -152,6 +152,15 @@ UX 建议：输入框 + 常用问题建议（见 `examples/dual-demo/QUESTIONS.m
 ## 附录 C · `buildHighcharts` 输出结构（消费端可依赖的契约）
 
 自 D15 起 Highcharts 配置由 vendored flint-js 编译器产出（不再是手写映射）。稳定部分：
+
+> ⚠️ **缺通道会抛错，而不是产出坏配置**：`buildHighcharts` / `buildECharts`（经
+> `toHighcharts` / `toECharts`）在进入后端编译前先做必需通道校验
+> （`sdk/src/converter/validate.ts`）。11 种图型都要求 `encodings.x` 与 `encodings.y` 在场——
+> pie/donut 中 x=分类（映射颜色）、y=数值（映射大小），其余图型即坐标轴两通道；
+> `encodings.series` 对所有图型都可选（有则分组/堆叠，无则单系列；pie/donut 多传 series 会被
+> 忽略，不改变输出）。缺失时抛 `Error`，消息形如 `groupedBar 需要 x 与 y 通道，缺少: y`，
+> 消费端应捕获并提示用户（改述/反馈），不要渲染空图。校验只看通道存在性、不看数据：
+> 0 行数据 + 通道齐全的 spec 正常返回空系列配置，不抛错。
 
 | 键 | 含义 |
 |---|---|
@@ -167,6 +176,30 @@ UX 建议：输入框 + 常用问题建议（见 `examples/dual-demo/QUESTIONS.m
 
 > ⚠️ **行为变更**：temporal x 现在是 `datetime` 轴（此前手写转换器用分类轴 + `categories`）。
 > 若你依赖 `xAxis.categories`，请改为读 `series[].data` 的 `[x, y]` 点对。
+
+> ⚠️ **重复 (x, series) 行不在契约内**：Highcharts 折线族对重复 x 求和、ECharts 分类轴
+> （line/slope）为 last-wins，两端语义不同，不要依赖任何「重复 x」行为。请在
+> `transform_plan` 里先用 `aggregate` 预聚合，保证每个 (x, series) 恰好一行后再交付渲染。
+
+### Highcharts 模块对照表（已发布 B1 + 规划 B2/B3）
+
+> 首行为 B1 新增的 6 个图型——连同 bar/line/pie/scatter/area，共 11 种**已发布**，均只需
+> 核心包；以下 B2/B3 行均为**规划中、未发布**的图型，模块需求仅供预研，勿按已上线加载。
+
+| 图型 | 需加载的模块 |
+|---|---|
+| groupedBar / stackedBar / donut / slope / connectedScatter / strip | 无（核心包即可） |
+| lollipop（B2） | **`highcharts/highcharts-more.js` → `highcharts/modules/dumbbell.js` → `highcharts/modules/lollipop.js`（顺序不能颠倒）** |
+| waterfall / boxplot / gauge（B2） | `highcharts/highcharts-more.js` |
+| funnel / pyramid（B2） | `highcharts/modules/funnel.js` |
+| streamgraph（B2） | `highcharts/modules/streamgraph.js` |
+| rose（B2） | `highcharts/modules/variable-pie.js`（实测注册 `variablepie` series） |
+| radar（B2） | `highcharts/highcharts-more.js`（polar 支持随该模块） |
+| histogram（B3） | `highcharts/modules/histogram-bellcurve.js`（实测注册 `histogram` + `bellcurve` 原生 series，B3 可直接用原生模块；或后端分箱，无需模块） |
+
+> 上表全部行均在 Highcharts 12.6.0 下实测：加载模块后断言 `Highcharts.seriesTypes.<name>`。
+> 注意 `lollipop.js` 依赖 `dumbbell.js`，而 `dumbbell.js` 又依赖 `highcharts-more.js` 提供的 `arearange`；
+> 只加载 `lollipop.js` 会抛出 `Cannot read properties of undefined (reading 'prototype')` 这类难以定位的错误。
 
 ## 参考
 

@@ -243,6 +243,24 @@ export function assembleHighcharts(input: ChartAssemblyInput): any {
     if (chartTemplate.postProcess) chartTemplate.postProcess(hcOption, instantiateContext);
 
     // ═══════════════════════════════════════════════════════════════════
+    // Defensive invariant: never hand out a typeless option. A template that
+    // is missing a required encoding channel (e.g. bar/line/scatter/strip need
+    // both x and y) early-returns, and the layout pass would then fabricate a
+    // `chart = {}` with no series — Highcharts.chart() renders nothing from it
+    // while the ECharts side silently draws a row-count chart. Throw instead.
+    // Empty *data* is unaffected: a complete spec always sets `chart.type`.
+    // ═══════════════════════════════════════════════════════════════════
+    if (!hcOption?.chart?.type) {
+        const missing = (['x', 'y'] as const).filter(ch => !channelSemantics[ch]?.field);
+        const cause = missing.length > 0
+            ? `a required encoding channel is missing (need ${missing.join(' and ')})`
+            : 'no chart type was produced';
+        throw new Error(
+            `Highcharts backend: spec for '${chartType}' produced no chart type — ${cause}.`,
+        );
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
     // RESULT
     // ═══════════════════════════════════════════════════════════════════
     if (warnings.length > 0) hcOption._warnings = warnings;

@@ -218,3 +218,31 @@ export const ecPieChartDef: ChartTemplateDef = {
         } as ChartPropertyDef,
     ],
 };
+
+/**
+ * ECharts Donut Chart — a pie with a hole. Mirrors the Highcharts/Vega-Lite
+ * backends' donut handling: property `defaultValue`s are NOT merged into
+ * `chartProperties` at assemble time, so the non-zero default must be injected
+ * here, inside `instantiate`, before delegating to `ecPieChartDef`. Without it,
+ * an absent `innerRadius` would fall through to `?? 0` and yield a solid pie
+ * ('0%' centre). Do not "simplify" this into a property default alone.
+ */
+const DONUT_DEFAULT_INNER_RADIUS = 50;
+
+export const ecDonutChartDef: ChartTemplateDef = {
+    ...ecPieChartDef,
+    chart: 'Donut Chart',
+    properties: (ecPieChartDef.properties ?? []).map(p =>
+        p.key === 'innerRadius' ? { ...p, defaultValue: DONUT_DEFAULT_INNER_RADIUS } : p,
+    ) as ChartPropertyDef[],
+    instantiate: (spec, ctx) => {
+        const innerRadius = ctx.chartProperties?.innerRadius;
+        const withHole = innerRadius == null
+            ? {
+                ...ctx,
+                chartProperties: { ...(ctx.chartProperties ?? {}), innerRadius: DONUT_DEFAULT_INNER_RADIUS },
+            }
+            : ctx;
+        ecPieChartDef.instantiate(spec, withHole);
+    },
+};

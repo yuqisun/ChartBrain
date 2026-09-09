@@ -1185,7 +1185,9 @@ export function ecApplyLayoutToSpec(
         } else {
             // Pie / Streamgraph / Sunburst，以及 Rose（叠堆或单角分类）：颜色多在 data / 节点上；
             // 无 color 的多角分类 Rose 已在上面按系列赋色，此处勿给整图套单一 series 色。
-            const colorByDataItem = context.chartType === 'Pie Chart' || context.chartType === 'Rose Chart'
+            const colorByDataItem = context.chartType === 'Pie Chart'
+                || context.chartType === 'Donut Chart'
+                || context.chartType === 'Rose Chart'
                 || context.chartType === 'Streamgraph'
                 || context.chartType === 'Sunburst Chart';
             if (colorByDataItem) {

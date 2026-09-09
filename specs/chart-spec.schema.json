@@ -14,8 +14,11 @@
       "required": ["type"],
       "properties": {
         "type": {
-          "description": "Controlled chart-type whitelist (MVP: first five Highcharts types, D11)",
-          "enum": ["bar", "line", "pie", "scatter", "area"]
+          "description": "Controlled chart-type whitelist",
+          "enum": [
+            "bar", "line", "pie", "scatter", "area",
+            "groupedBar", "stackedBar", "donut", "slope", "connectedScatter", "strip"
+          ]
         },
         "title": { "type": "string", "maxLength": 200 }
       }

@@ -23,10 +23,10 @@ const CATEGORICAL_BASE = {
 };
 
 describe('highcharts backend smoke', () => {
-  it('registers the five ChartBrain chart types', () => {
+  it('registers the ChartBrain chart types', () => {
     const names = hcAllTemplateDefs.map(t => t.chart);
     expect(names).toEqual(
-      expect.arrayContaining(['Bar Chart', 'Line Chart', 'Area Chart', 'Scatter Plot', 'Pie Chart']),
+      expect.arrayContaining(['Bar Chart', 'Line Chart', 'Area Chart', 'Scatter Plot', 'Connected Scatter Plot', 'Pie Chart', 'Donut Chart', 'Slope Chart']),
     );
     expect(hcGetTemplateDef('Bar Chart')).toBeDefined();
     expect(hcGetTemplateDef('Nonexistent Chart')).toBeUndefined();
@@ -89,6 +89,30 @@ describe('highcharts backend smoke', () => {
     expect(option.plotOptions.series.stacking).toBe('normal');
   });
 
+  it('Slope Chart → one line per entity across two periods', () => {
+    const option = assembleHighcharts({
+      data: {
+        values: [
+          { period: 'before', region: 'East', revenue: 120 },
+          { period: 'after', region: 'East', revenue: 150 },
+          { period: 'before', region: 'West', revenue: 90 },
+          { period: 'after', region: 'West', revenue: 110 },
+        ],
+      },
+      semantic_types: { period: 'Category', region: 'Country', revenue: 'Price' },
+      chart_spec: {
+        chartType: 'Slope Chart',
+        encodings: { x: { field: 'period' }, y: { field: 'revenue' }, color: { field: 'region' } },
+      },
+    }) as any;
+
+    expect(option.chart.type).toBe('line');
+    expect(option.series.map((s: any) => s.name)).toEqual(['East', 'West']);
+    expect(option.series[0].data).toEqual([120, 150]);
+    expect(option.series[1].data).toEqual([90, 110]);
+    expect(option.series.every((s: any) => s.marker?.enabled === true)).toBe(true);
+  });
+
   it('Scatter Plot → [x, y] pairs on linear axes, one series per group', () => {
     const option = assembleHighcharts({
       data: { values: SCATTER_DATA },
@@ -109,6 +133,71 @@ describe('highcharts backend smoke', () => {
     expect(option.series).toHaveLength(3);
     expect(option.series[0].data).toEqual([[1.6, 32]]);
     expect(option.tooltip.pointFormat).toBeDefined();
+  });
+
+  it('Connected Scatter Plot → path follows data order (no sorting)', () => {
+    const option = assembleHighcharts({
+      data: {
+        values: [
+          { x: 3, y: 1, g: 'A' },
+          { x: 1, y: 2, g: 'A' },
+          { x: 2, y: 3, g: 'A' },
+        ],
+      },
+      semantic_types: { x: 'Quantity', y: 'Quantity', g: 'Category' },
+      chart_spec: {
+        chartType: 'Connected Scatter Plot',
+        encodings: { x: { field: 'x' }, y: { field: 'y' }, color: { field: 'g' } },
+      },
+    }) as any;
+
+    expect(option.chart.type).toBe('line');
+    expect(option.series).toHaveLength(1);
+    expect(option.series[0].name).toBe('A');
+    expect(option.series[0].data).toEqual([[3, 1], [1, 2], [2, 3]]);
+    expect(option.series[0].marker.enabled).toBe(true);
+  });
+
+  it('Connected Scatter Plot without color keeps one path in row order', () => {
+    const option = assembleHighcharts({
+      data: {
+        values: [
+          { x: 5, y: 1 },
+          { x: 2, y: 3 },
+          { x: 7, y: 2 },
+        ],
+      },
+      semantic_types: { x: 'Quantity', y: 'Quantity' },
+      chart_spec: {
+        chartType: 'Connected Scatter Plot',
+        encodings: { x: { field: 'x' }, y: { field: 'y' } },
+      },
+    }) as any;
+
+    expect(option.series).toHaveLength(1);
+    expect(option.series[0].name).toBe('y');
+    expect(option.series[0].data).toEqual([[5, 1], [2, 3], [7, 2]]);
+    expect(option.series[0].marker.enabled).toBe(true);
+  });
+
+  it('Connected Scatter Plot keeps duplicate x points instead of summing them', () => {
+    const option = assembleHighcharts({
+      data: {
+        values: [
+          { x: 1, y: 10, g: 'A' },
+          { x: 1, y: 20, g: 'A' },
+          { x: 2, y: 30, g: 'A' },
+        ],
+      },
+      semantic_types: { x: 'Quantity', y: 'Quantity', g: 'Category' },
+      chart_spec: {
+        chartType: 'Connected Scatter Plot',
+        encodings: { x: { field: 'x' }, y: { field: 'y' }, color: { field: 'g' } },
+      },
+    }) as any;
+
+    // line 模板会把两个 x=1 的行合并成 [1,30]；连线散点必须保留两个点
+    expect(option.series[0].data).toEqual([[1, 10], [1, 20], [2, 30]]);
   });
 
   it('Pie Chart → {name, y} slices with percentage labels', () => {
@@ -244,4 +333,122 @@ describe('highcharts backend smoke', () => {
       chart_spec: { chartType: 'Radar Chart', encodings: { x: { field: 'month' } } },
     })).toThrow(/Unknown Highcharts chart type/);
   });
+
+  it('Grouped Bar Chart → side-by-side columns, no stacking', () => {
+    const option = assembleHighcharts({
+      ...CATEGORICAL_BASE,
+      chart_spec: {
+        chartType: 'Grouped Bar Chart',
+        encodings: { x: { field: 'month' }, y: { field: 'revenue' }, group: { field: 'region' } },
+      },
+    }) as any;
+
+    expect(option.chart.type).toBe('column');
+    expect(option.series).toHaveLength(2);
+    expect(option.series.every((s: any) => s.type === 'column')).toBe(true);
+    expect(option.plotOptions?.series?.stacking).toBeUndefined();
+    expect(option.series.map((s: any) => s.name)).toEqual(['East', 'West']);
+    expect(option.series[0].data).toEqual([120, 150]);
+  });
+
+  it('Stacked Bar Chart → stacked columns', () => {
+    const option = assembleHighcharts({
+      ...CATEGORICAL_BASE,
+      chart_spec: {
+        chartType: 'Stacked Bar Chart',
+        encodings: { x: { field: 'month' }, y: { field: 'revenue' }, color: { field: 'region' } },
+      },
+    }) as any;
+
+    expect(option.chart.type).toBe('column');
+    expect(option.plotOptions.series.stacking).toBe('normal');
+    expect(option.series.map((s: any) => s.name)).toEqual(['East', 'West']);
+    expect(option.series[0].data).toEqual([120, 150]);
+  });
+
+  it('Stacked Bar Chart splits by color even when group is also bound', () => {
+    const option = assembleHighcharts({
+      ...CATEGORICAL_BASE,
+      chart_spec: {
+        chartType: 'Stacked Bar Chart',
+        encodings: {
+          x: { field: 'month' }, y: { field: 'revenue' },
+          color: { field: 'region' }, group: { field: 'region' },
+        },
+      },
+    }) as any;
+    expect(option.series.map((s: any) => s.name)).toEqual(['East', 'West']);
+    expect(option.plotOptions.series.stacking).toBe('normal');
+  });
+
+  it('Grouped Bar Chart splits by group even when color is also bound', () => {
+    const option = assembleHighcharts({
+      ...CATEGORICAL_BASE,
+      chart_spec: {
+        chartType: 'Grouped Bar Chart',
+        encodings: {
+          x: { field: 'month' }, y: { field: 'revenue' },
+          group: { field: 'region' }, color: { field: 'region' },
+        },
+      },
+    }) as any;
+    expect(option.series.map((s: any) => s.name)).toEqual(['East', 'West']);
+    expect(option.plotOptions?.series?.stacking).toBeUndefined();
+  });
+
+  it('Strip Plot → deterministic jitter within each category band', () => {
+    const input = {
+      data: {
+        values: [
+          { region: 'East', revenue: 120 },
+          { region: 'East', revenue: 150 },
+          { region: 'West', revenue: 90 },
+        ],
+      },
+      semantic_types: { region: 'Country', revenue: 'Price' },
+      chart_spec: {
+        chartType: 'Strip Plot',
+        encodings: { x: { field: 'region' }, y: { field: 'revenue' } },
+      },
+    } as any;
+
+    const a = assembleHighcharts(input) as any;
+    const b = assembleHighcharts(input) as any;
+
+    expect(a.chart.type).toBe('scatter');
+    expect(a.series[0].data).toHaveLength(3);
+    expect(a.series[0].data).toEqual(b.series[0].data);
+    // y 值保持原值；x 被抖动到类目带内
+    expect(a.series[0].data.map((p: any) => p[1])).toEqual([120, 150, 90]);
+    // 带内断言：East(slot=0) 的两点落在 [-0.4, 0.4)，West(slot=1) 落在 [0.6, 1.4)
+    const xs = a.series[0].data.map((p: any) => p[0]);
+    expect(xs[0]).toBeGreaterThanOrEqual(-0.4);
+    expect(xs[0]).toBeLessThan(0.4);
+    expect(xs[1]).toBeGreaterThanOrEqual(-0.4);
+    expect(xs[1]).toBeLessThan(0.4);
+    expect(xs[2]).toBeGreaterThanOrEqual(0.6);
+    expect(xs[2]).toBeLessThan(1.4);
+    expect(xs[0]).not.toBe(xs[1]); // 同带内两点的 x 必须不同（否则就是堆叠）
+  });
+
+  it('Strip Plot → grouped series jitter continues across groups', () => {
+    const option = assembleHighcharts({
+      data: {
+        values: [
+          { region: 'East', g: 'A', revenue: 120 },
+          { region: 'East', g: 'B', revenue: 130 },
+        ],
+      },
+      semantic_types: { region: 'Country', g: 'Category', revenue: 'Price' },
+      chart_spec: {
+        chartType: 'Strip Plot',
+        encodings: { x: { field: 'region' }, y: { field: 'revenue' }, color: { field: 'g' } },
+      },
+    }) as any;
+
+    expect(option.series).toHaveLength(2);
+    // 两个分组在同一个带内，首行 x 不得相同（相同即退化为竖向堆叠）
+    expect(option.series[0].data[0][0]).not.toBe(option.series[1].data[0][0]);
+  });
+
 });

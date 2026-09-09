@@ -16,7 +16,7 @@ import { ecLineChartDef, ecBumpChartDef } from './line';
 import { ecSlopeChartDef } from './slope';
 import { ecAreaChartDef } from './area';
 import { ecRangeAreaChartDef } from './range-area';
-import { ecPieChartDef } from './pie';
+import { ecPieChartDef, ecDonutChartDef } from './pie';
 import { ecHeatmapDef } from './heatmap';
 import { ecHistogramDef } from './histogram';
 import { ecBoxplotDef } from './boxplot';
@@ -51,7 +51,7 @@ export const ecTemplateDefs: { [key: string]: ChartTemplateDef[] } = {
     'Scatter & Point': [ecScatterPlotDef, ecRegressionDef, ecConnectedScatterDef, ecRangedDotPlotDef, ecBoxplotDef, ecStripPlotDef],
     'Bar':             [ecBarChartDef, ecGroupedBarChartDef, ecStackedBarChartDef, ecLollipopChartDef, ecPyramidChartDef, ecHeatmapDef, ecCalendarHeatmapDef],
     'Line & Area':     [ecLineChartDef, ecBumpChartDef, ecSlopeChartDef, ecAreaChartDef, ecStreamgraphDef, ecRangeAreaChartDef],
-    'Part-to-Whole':   [ecPieChartDef, ecFunnelChartDef, ecTreemapDef, ecSunburstDef, ecTreeDef],
+    'Part-to-Whole':   [ecPieChartDef, ecDonutChartDef, ecFunnelChartDef, ecTreemapDef, ecSunburstDef, ecTreeDef],
     'Statistical':     [ecHistogramDef, ecDensityPlotDef, ecEcdfPlotDef, ecParallelCoordinatesDef],
     'Financial':       [ecCandlestickDef],
     'Other':           [ecWaterfallChartDef, ecGanttChartDef, ecBulletChartDef],

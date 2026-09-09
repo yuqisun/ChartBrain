@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { buildHighcharts, toHighcharts } from "../src/index";
-import type { ChartSpec, Row } from "../src/types";
+import { buildHighcharts, toHighcharts, toECharts } from "../src/index";
+import type { ChartSpec, ChartType, Row } from "../src/types";
 
 const sales: Row[] = [
   { month: "2026-01", region: "华东", revenue: 1200 },
@@ -157,5 +157,140 @@ describe("toHighcharts 各图型", () => {
     expect(Array.isArray(opt.series)).toBe(true);
     expect(opt.series[0].data).toEqual([]);
     expect(opt.xAxis).toMatchObject({ categories: [] });
+  });
+
+  it("donut（x/y 映射到 color/size）", () => {
+    const opt = toHighcharts(
+      [
+        { region: "华东", revenue: 4700 },
+        { region: "华南", revenue: 1700 },
+      ],
+      {
+        schema_version: 1,
+        chart: { type: "donut", title: "营收占比" },
+        encodings: {
+          x: { field: "region", value_type: "categorical" },
+          y: { field: "revenue", value_type: "numeric" },
+        },
+      },
+    );
+    expect(opt.chart.type).toBe("pie");
+    // 钉死真实值 '50%'：donut 模板默认 innerRadius=50 → innerSize '50%'；若回归成
+    // 实心饼（无内孔）或默认值被改，这里会红（vendor donut.ts:11,21-25 + pie.ts:64-66）
+    expect(opt.series[0].innerSize).toBe("50%");
+    expect(opt.series[0].data).toHaveLength(2);
+  });
+
+  it("groupedBar（series 映射到 group 通道，不堆叠）", () => {
+    const opt = toHighcharts(sales, {
+      schema_version: 1,
+      chart: { type: "groupedBar", title: "分组柱" },
+      encodings: {
+        x: { field: "month", value_type: "categorical" },
+        y: { field: "revenue", value_type: "numeric" },
+        series: { field: "region" },
+      },
+    });
+    expect(opt.chart.type).toBe("column");
+    expect(opt.series).toHaveLength(2);
+    expect((opt as any).plotOptions?.series?.stacking).toBeUndefined();
+  });
+
+  it("every whitelisted chart type maps to the expected backend shape", () => {
+    // 这 11 个键即 ChartType 联合（types.ts）与 prompt/白名单的又一份副本（既有
+    // 做法，第 6 处；本轮不引入共享模块）。逐类型断言最小输出：若 groupedBar /
+    // stackedBar 的 Flint 名字互换、stackedBar 丢掉堆叠、donut 的 EC 配色回归等，
+    // 这里都会红。
+    // 键类型绑到 ChartType：漏掉一个图型或写错名字都是编译错误，而不是静默跳过
+    const expected: Record<ChartType, { hc: string; ec: string }> = {
+      bar: { hc: "column", ec: "bar" },
+      stackedBar: { hc: "column", ec: "bar" },
+      groupedBar: { hc: "column", ec: "bar" },
+      line: { hc: "line", ec: "line" },
+      slope: { hc: "line", ec: "line" },
+      connectedScatter: { hc: "line", ec: "line" },
+      area: { hc: "area", ec: "line" },
+      scatter: { hc: "scatter", ec: "scatter" },
+      strip: { hc: "scatter", ec: "scatter" },
+      pie: { hc: "pie", ec: "pie" },
+      donut: { hc: "pie", ec: "pie" },
+    };
+    for (const [type, want] of Object.entries(expected)) {
+      const spec: ChartSpec = {
+        schema_version: 1,
+        chart: { type: type as ChartSpec["chart"]["type"], title: type },
+        encodings: {
+          x: { field: "month", value_type: "categorical" },
+          y: { field: "revenue", value_type: "numeric" },
+          series: { field: "region" },
+        },
+      };
+      const hc = toHighcharts(sales, spec) as any;
+      const ec = toECharts(sales, spec) as any;
+      expect(hc.chart.type).toBe(want.hc);
+      expect(ec.series[0].type).toBe(want.ec);
+    }
+    // 堆叠语义单独钉住（图型断言只到 column 级，抓不到 stacking 丢失），两端都断言
+    const stackedSpec: ChartSpec = {
+      schema_version: 1,
+      chart: { type: "stackedBar", title: "s" },
+      encodings: {
+        x: { field: "month", value_type: "categorical" },
+        y: { field: "revenue", value_type: "numeric" },
+        series: { field: "region" },
+      },
+    };
+    expect((toHighcharts(sales, stackedSpec) as any).plotOptions.series.stacking).toBe("normal");
+    expect((toECharts(sales, stackedSpec) as any).series[0].stack).toBe("total");
+
+    // groupedBar 反向：两端都不许堆叠
+    const groupedSpec: ChartSpec = { ...stackedSpec, chart: { type: "groupedBar", title: "g" } };
+    expect((toHighcharts(sales, groupedSpec) as any).plotOptions?.series?.stacking).toBeUndefined();
+    expect((toECharts(sales, groupedSpec) as any).series[0].stack).toBeUndefined();
+  });
+});
+
+describe("已知分歧钉住：重复 (x, series) 行是契约外输入（M2）", () => {
+  it("重复 x 是契约外输入：HC 求和、EC 取最后一行（已知分歧，钉住以防漂移）", () => {
+    // 输入未在 transform_plan 里按 (x, series) 预聚合——同一 (before, East) 出现两行。
+    // 契约要求先 aggregate 再渲染（docs/INTEGRATION.md「重复 (x, series) 行不在契约内」）；
+    // 但契约外输入也得有确定行为，且两端行为不同，必须钉死防止静默漂移：
+    //   HC 折线族对重复 x 求和：highcharts/templates/line.ts:42-51（数值/时间轴 toPairs）
+    //   与 :88-100（分类轴 buildValues）都用 agg 累加；slope 委托 line（slope.ts:20-25）。
+    //   EC 分类轴路径 last-wins：echarts/templates/slope.ts:48-52 alignToPeriods 与
+    //   echarts/templates/line.ts:315-319 buildCategoryAlignedData 都是 map.set 覆盖。
+    // 任一端行为变了这里就红，改动者必须重读该契约。
+    const dupX: Row[] = [
+      { period: "before", region: "East", revenue: 100 },
+      { period: "before", region: "East", revenue: 50 }, // 重复 (before, East)
+      { period: "after", region: "East", revenue: 200 },
+      { period: "before", region: "West", revenue: 90 },
+      { period: "after", region: "West", revenue: 110 },
+    ];
+    const spec: ChartSpec = {
+      schema_version: 1,
+      chart: { type: "slope", title: "重复 x 分歧钉住" },
+      encodings: {
+        x: { field: "period", value_type: "categorical" },
+        y: { field: "revenue", value_type: "numeric" },
+        series: { field: "region" },
+      },
+    };
+
+    const hc = toHighcharts(dupX, spec) as any;
+    const ec = toECharts(dupX, spec) as any;
+    // 两端都是同一张分类轴（period 按序 before/after），逐位对齐才有可比性
+    expect(hc.xAxis).toMatchObject({ type: "category", categories: ["before", "after"] });
+    expect(ec.xAxis).toMatchObject({ type: "category", data: ["before", "after"] });
+    const hcEast = hc.series.find((s: any) => s.name === "East").data;
+    const hcWest = hc.series.find((s: any) => s.name === "West").data;
+    const ecEast = ec.series.find((s: any) => s.name === "East").data;
+    const ecWest = ec.series.find((s: any) => s.name === "West").data;
+    // HC 求和：East@before = 100 + 50 = 150
+    expect(hcEast).toEqual([150, 200]);
+    expect(hcWest).toEqual([90, 110]);
+    // EC last-wins：East@before 取最后一行 50
+    expect(ecEast).toEqual([50, 200]);
+    expect(ecWest).toEqual([90, 110]);
   });
 });

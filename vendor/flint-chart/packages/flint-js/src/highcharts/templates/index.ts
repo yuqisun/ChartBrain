@@ -4,18 +4,22 @@
 // Highcharts template registry.
 
 import { ChartTemplateDef } from '../../core/types';
-import { hcBarChartDef } from './bar';
+import { hcBarChartDef, hcGroupedBarChartDef, hcStackedBarChartDef } from './bar';
 import { hcLineChartDef } from './line';
 import { hcAreaChartDef } from './area';
+import { hcSlopeChartDef } from './slope';
 import { hcScatterPlotDef } from './scatter';
+import { hcConnectedScatterDef } from './connected-scatter';
+import { hcStripPlotDef } from './strip';
 import { hcPieChartDef } from './pie';
+import { hcDonutChartDef } from './donut';
 
 /** Highcharts chart template definitions, grouped by category. */
 export const hcTemplateDefs: { [key: string]: ChartTemplateDef[] } = {
-    'Scatter & Point': [hcScatterPlotDef],
-    'Bar':             [hcBarChartDef],
-    'Line & Area':     [hcLineChartDef, hcAreaChartDef],
-    'Part-to-Whole':   [hcPieChartDef],
+    'Scatter & Point': [hcScatterPlotDef, hcConnectedScatterDef, hcStripPlotDef],
+    'Bar':             [hcBarChartDef, hcGroupedBarChartDef, hcStackedBarChartDef],
+    'Line & Area':     [hcLineChartDef, hcAreaChartDef, hcSlopeChartDef],
+    'Part-to-Whole':   [hcPieChartDef, hcDonutChartDef],
 };
 
 /** Flat list of all Highcharts chart template definitions. */
