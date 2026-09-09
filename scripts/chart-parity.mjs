@@ -73,9 +73,20 @@ const SCAT_ORD_BASE = {
   data: { values: SCAT_ORD },
   semantic_types: { weight: 'Quantity', mpg: 'Quantity', origin: 'Country' },
 };
-// Slope 独立夹具：每个实体（region）每期恰好一行，x 无重复——HC line 分类分支
-// 对重复 x 求和、上游 EC slope 用 map.set 后值覆盖，两者对重复 x 语义不同，
-// 共用 CAT（East 两行同 period 'before'）会让逐点相等永不成立。
+// Slope 独立夹具：每个实体（region）每期恰好一行，x 无重复——不能直接复用 CAT
+// （East 有两行同 period 'before'）。原因是重复 (x, series) 行属**契约外**输入，两端
+// 语义本就不同（实测结论，勿改夹具去迎合差异——差异本身是文档化的契约外行为）：
+//   - HC 折线族（line/area/slope）对重复 x **求和**（分类轴与时间轴分支一致）：
+//     vendor/flint-chart/packages/flint-js/src/highcharts/templates/line.ts:40-48；
+//     仅 Connected Scatter 刻意**保留**重复点（路径语义），测试见
+//     vendor/flint-chart/packages/flint-js/tests/highcharts.test.ts:183。
+//   - 上游 EC 的分类轴对齐（line/slope）是 **last-wins**（map.set 后值覆盖）：
+//     vendor/flint-chart/packages/flint-js/src/echarts/templates/line.ts:318 与
+//     vendor/flint-chart/packages/flint-js/src/echarts/templates/slope.ts:51。
+// 同一份含重复 x 的 spec 在两端会渲染不同——该差异类不在本门禁的检测范围内：双端逐点
+// 一致的门禁**故意**喂去重后的夹具，因为 SDK 的 transform 运行时预期在 transform_plan
+// 里先用 aggregate 预聚合到每个 (x, series) 恰一行，重复行不会到达模板。契约全文见
+// docs/more-chart-types-design.md §3.1，消费端注意事项见 docs/INTEGRATION.md 附录 C。
 const SLOPE = [
   { period: 'before', region: 'East', revenue: 120 },
   { period: 'after', region: 'East', revenue: 150 },
