@@ -72,6 +72,19 @@ const SCAT_ORD_BASE = {
   data: { values: SCAT_ORD },
   semantic_types: { weight: 'Quantity', mpg: 'Quantity', origin: 'Country' },
 };
+// Slope 独立夹具：每个实体（region）每期恰好一行，x 无重复——HC line 分类分支
+// 对重复 x 求和、上游 EC slope 用 map.set 后值覆盖，两者对重复 x 语义不同，
+// 共用 CAT（East 两行同 period 'before'）会让逐点相等永不成立。
+const SLOPE = [
+  { period: 'before', region: 'East', revenue: 120 },
+  { period: 'after', region: 'East', revenue: 150 },
+  { period: 'before', region: 'West', revenue: 90 },
+  { period: 'after', region: 'West', revenue: 110 },
+];
+const SLOPE_BASE = {
+  data: { values: SLOPE },
+  semantic_types: { period: 'Category', region: 'Country', revenue: 'Price' },
+};
 const inp = (chartType, encodings, base = CAT_BASE) => ({
   ...base,
   chart_spec: { chartType, encodings },
@@ -108,7 +121,7 @@ const CASES = [
   },
   {
     label: 'Slope Chart',
-    input: inp('Slope Chart', { x: { field: 'period' }, y: { field: 'revenue' }, color: { field: 'region' } }),
+    input: inp('Slope Chart', { x: { field: 'period' }, y: { field: 'revenue' }, color: { field: 'region' } }, SLOPE_BASE),
     hc: 'line', ec: 'line',
     // 定义性差异：slope 的节点靠 marker 呈现，HC 每个 series 都必须开 marker
     check(hc) {
