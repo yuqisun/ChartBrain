@@ -22,7 +22,8 @@ NL + schema + 样例 ──→ LLM 产出 中性 spec + 变换计划 ──→ �
 - **LLM 只做「意图表达」**：输出受约束的**库无关中性 spec**（图型白名单 + 编码 + 声明式变换计划），
   不写代码/SQL、不产库配置、不碰计算；
 - **全部确定性步骤在消费端 SDK**：声明式变换执行（filter/aggregate/sort/limit）→ 中性 spec → 库配置
-  （Highcharts 转换器自研 / ECharts 经 [flint-js](https://github.com/microsoft/flint-chart)）→ 数据绑定；
+  （Highcharts / ECharts 均经 vendored [flint-js](https://github.com/microsoft/flint-chart) 编译；
+  Highcharts 后端为本仓库新增，见 `vendor/flint-chart/FORK.md`）→ 数据绑定；
 - **数据不出域**：全量真实数据只在消费端，服务端只见列 schema + 少量样例。
 
 ## 消费端三步接入（Highcharts 示例）
@@ -53,7 +54,7 @@ const option = buildHighcharts(yourFullData, chart_spec); // 数据不出域
 Highcharts.chart("container", option);
 ```
 
-用 ECharts 只差一步：把 `buildHighcharts` 换成 `buildECharts`（SDK 内部经 flint-js 编译），
+用 ECharts 只差一步：把 `buildHighcharts` 换成 `buildECharts`（SDK 内部同样经 flint-js 编译），
 **同一份 spec 双库输出一致**——可运行 `examples/dual-demo` 亲眼对比。
 
 > 现成可跑的例子：`examples/highcharts-demo`（单库）与 `examples/dual-demo`（同 spec 双库并排）。
@@ -65,26 +66,33 @@ Highcharts.chart("container", option);
 ```bash
 cd server
 python -m venv .venv && .\.venv\Scripts\pip install -e ".[dev]"
-.\.venv\Scripts\python -m pytest -q        # 31 tests
+.\.venv\Scripts\python -m pytest -q        # 35 tests
 .\.venv\Scripts\uvicorn chartbrain_server.main:app --port 8000
+```
+
+**vendor flint-js**（编译器，`sdk` 通过 `file:` 依赖消费；**首次与每次改动后都要先构建**）：
+
+```bash
+cd vendor/flint-chart/packages/flint-js
+npm install && npm run build                     # dist/ 不入库，必须构建
 ```
 
 **sdk**（Node 18+）：
 
 ```bash
 cd sdk
-npm install
-npm run typecheck && npm run build && npm test   # 22 tests
+npm install                                      # 解析 file:../vendor/... 依赖
+npm run typecheck && npm run build && npm test   # 27 tests
 ```
 
 **双库对比 demo**：
 
 ```bash
-cd examples/dual-demo && npm i && node demo.mjs "每月营收面积图"
-# 打开生成的 dual-chart.html
+cd examples/dual-demo && npm i && node demo.mjs "每月营收面积图"   # 需 server 在跑
+# 或离线版（不依赖 server）：node offline.mjs → 打开 dual-offline.html
 ```
 
-CI（GitHub Actions）：push/PR 自动跑 server pytest + sdk typecheck/build/vitest。
+CI（GitHub Actions）：push/PR 自动跑 server pytest + vendor 构建 + sdk typecheck/build/vitest。
 
 ## 仓库结构
 
@@ -99,7 +107,8 @@ viz-ai/
 │   ├── scripts/eval_spec_baseline.py   # spec 质量基线评测
 │   └── tests/                          # 31 tests
 ├── sdk/                             # @chartbrain/sdk（TypeScript，确定性执行层）
-│   └── src/  transform.ts（变换运行时）· converter/highcharts.ts · converter/echarts.ts（flint-js）
+│   └── src/  transform.ts（变换运行时）· converter/highcharts.ts · converter/echarts.ts（均经 vendored flint-js）
+├── vendor/flint-chart/              # vendored flint-js 0.5.1 + 新增 Highcharts 后端（见 FORK.md）
 ├── examples/
 │   ├── highcharts-demo/            # 单库端到端 demo
 │   └── dual-demo/                  # 同一 spec → Highcharts + ECharts 并排
@@ -133,8 +142,9 @@ viz-ai/
 
 微软 2026-07 开源的 [Flint](https://github.com/microsoft/flint-chart) 与我们的路线最接近
 （中性 spec + 确定性编译），但 **「库无关中性 spec + Highcharts/ECharts 确定性转换 +
-声明式数据变换 + 消费端 SDK 执行」的完整组合目前是行业空位**（见调研报告）。Flint 已被吸收为
-ECharts 后端的编译引擎（D12）。
+声明式数据变换 + 消费端 SDK 执行」的完整组合目前是行业空位**（见调研报告）。Flint 已被 vendor
+为本仓库的编译引擎：ECharts 后端沿用上游实现，**Highcharts 后端为本仓库新增**
+（`vendor/flint-chart/FORK.md`，锁定上游 0.5.1）。
 
 ## 文档
 

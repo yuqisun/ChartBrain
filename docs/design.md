@@ -15,7 +15,7 @@
 独立于业务服务的**图表智能中间件**，由三部分组成：
 
 1. **chartbrain-server**（Python / FastAPI）：接收消费端的自然语言 + 所用库声明 + 列 schema/样例，让 LLM 产出**轻量中性 chart spec + 声明式变换计划**，做 L1/L2 校验后返回——**无状态、不产库配置**（D13）。
-2. **@chartbrain/sdk**（TypeScript）：在**消费端本地**完成全部确定性步骤（D13）——执行声明式变换计划 → 由**确定性转换器**把中性 spec 转成目标库配置（Highcharts 自研 / ECharts 经 flint-js，D12）→ 把真实数据绑定进配置。
+2. **@chartbrain/sdk**（TypeScript）：在**消费端本地**完成全部确定性步骤（D13）——执行声明式变换计划 → 由**确定性转换器**把中性 spec 转成目标库配置（Highcharts / ECharts 均经 vendored flint-js，D15/D12）→ 把真实数据绑定进配置。
 3. 消费端接入后，用**自己现有的图表库**渲染。
 
 ### 1.3 非目标（守住边界）
@@ -44,6 +44,7 @@
 | D12 | Flint 定位（Spike 结论，2026-09，读源码验证） | 微软 Flint（MIT，0.5.x，TS 库）**不作服务端引擎**：汇编要求 `data.values` 在场（`core/types.ts`），且 flint-py 未发布、仅 Vega-Lite 后端。**可作消费端 SDK 内的汇编引擎**：M5 的 ECharts 后端候选 = SDK 内调 flint-js `assembleECharts`（数据先由我们的变换运行时预聚合再喂入，Flint 对预聚合表不做重复聚合，`vegalite/assemble.ts` 已注明）。Highcharts 无后端（现有：VL/ECharts/Chart.js/Plotly/Excel）→ 转换器自研（D11）。声明式 filter / min / max / median 等超出 Flint 输入面（encoding 级 aggregate 仅 count/sum/average/mean）→ 变换 DSL 自研 |
 | D13 | 转换器执行位置（2026-09 定） | **确定性转换器随 @chartbrain/sdk 以 TS 发布、在消费端本地执行**（与 D12 对称，双库一致）；server 只做 LLM + L1/L2 校验 + 返回 spec/变换计划（无状态、不见数据）；变换、转换、绑定、L3 冒烟等全部确定性步骤在 SDK 完成 |
 | D14 | 能力扩展（2026-09 定，分批） | **P1**：`binTime`（date 按月/季/年分桶）+ `derive`（**二元+常量**四则，复杂公式用两步 derive 链）；**P2**：`percent`（countPercent，分母按 SQL 窗口语义：global/filtered/group/partition[fields]）+ `growth`（环比 mom / 同比 yoy，按 time_field 有序、partition 分区；首期/无前值→**null**，不补 0）。占比/增长率数值一律存 **0~1**，`%` 格式化归消费端/SDK 显示层。表达式与窗口细节见 §4.4 |
+| D15 | Highcharts 后端（2026-09 定，**取代 D11 的「转换器自研」**） | Highcharts 配置不再手写：**vendor flint-js（上游 0.5.1）到 `vendor/flint-chart/`，并在其中新增 `src/highcharts/` 后端**，与 ECharts 后端共用同一套编译器管线（语义 / 布局 / 主题）。理由：上游 `flint-chart/core` 未导出后端所需的内部函数（`applyAggregation` / `decideColorMaps` / `normalizeChartProperties` 等），且 `exports` 无通配符，深路径导入被封装 → vendor 后可 `import '../core/...'` 直接复用。上游**不追踪**（见 `vendor/flint-chart/FORK.md`）；SDK 经 `file:` 依赖消费。v1 覆盖 bar/line/area/scatter/pie，不支持 facet 与 chart-type 变换 |
 
 ---
 
@@ -74,7 +75,7 @@
 │  ① Transform runtime：执行 transform_plan（D7）             │
 │      filter / aggregate / sort / limit …（闭集算子）         │
 │  ② Converter（D13）：neutral spec → 库配置                  │
-│      highcharts（自研） / echarts（经 flint-js，D12）        │
+│      highcharts（vendored flint-js 后端，D15） / echarts（经 flint-js，D12） │
 │  ③ Data binder：把结果数据绑定进库配置的 series              │
 │  ④ L3 冒烟（可选）：golden / 可渲染自检                     │
 └───────────────┬────────────────────────────────────────────┘
@@ -98,7 +99,7 @@
 2. 调用 `POST /v1/charts`。
 3. 服务端：组装受控上下文（列 schema 指纹 + 库能力声明 + 少量 NL→spec 范例）→ LLM 结构化输出中性 spec + 变换计划 → L1/L2 校验（L3 冒烟移到 SDK，D13）。
 4. 返回 `{ request_id, chart_spec, transform_plan, warnings }`。
-5. 消费端 `@chartbrain/sdk`（全部确定性步骤，D13）：执行 `transform_plan`（本地全量数据）→ 确定性转换器产出目标库配置（Highcharts 自研 / ECharts 经 flint-js）→ 数据绑定 →（可选）L3 冒烟 → 交给自己的 Highcharts/ECharts 渲染。
+5. 消费端 `@chartbrain/sdk`（全部确定性步骤，D13）：执行 `transform_plan`（本地全量数据）→ 确定性转换器产出目标库配置（Highcharts / ECharts 均经 vendored flint-js）→ 数据绑定 →（可选）L3 冒烟 → 交给自己的 Highcharts/ECharts 渲染。
 
 ---
 
@@ -228,7 +229,7 @@
   "chart_spec": { /* 4.1 的中性 spec */ },
   "warnings": [ "month 被当作分类轴处理（可指定 date 粒度）" ]
 }
-// 消费端 @chartbrain/sdk：执行变换 → 转换（Highcharts 自研 / ECharts 经 flint-js）→ 绑定数据 → 渲染
+// 消费端 @chartbrain/sdk：执行变换 → 转换（Highcharts / ECharts 均经 vendored flint-js）→ 绑定数据 → 渲染
 
 // 响应 422（校验失败） / 409（歧义，需澄清）
 ```

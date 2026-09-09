@@ -57,7 +57,7 @@ sequenceDiagram
 | ⑦ 校验 | server | L1 = `spec/validator.py`（读 `specs/chart-spec.schema.json`）；L2 = `spec/l2.py`（列生命周期/类型/白名单）；单轮修复在 `generate_spec()` |
 | 422/503 | server | `routes.py` 按 `result.error_kind` 映射：clarification/validation→422，provider→503；响应含 `request_id`（审计） |
 | ⑨ SDK 入口 | 消费端 SDK | `sdk/src/index.ts`：`buildHighcharts()` / `buildECharts()` |
-| ⑩ 本地处理 | SDK | ① `sdk/src/transform.ts` `executeTransform()`（算子闭集）→ ② `converter/highcharts.ts`（自研）或 `converter/echarts.ts`（flint-js `assembleECharts`）→ ③ 数据绑定进 series |
+| ⑩ 本地处理 | SDK | ① `sdk/src/transform.ts` `executeTransform()`（算子闭集）→ ② `converter/highcharts.ts` 或 `converter/echarts.ts`（**均经 vendored flint-js 编译器**，D15/D12）→ ③ 数据绑定进 series |
 | ⑬ 渲染 | 消费端前端 | 原生 `Highcharts.chart(container, option)` / React `<HighchartsReact options=…>` / ECharts `setOption(option)` |
 | 审计 | server | `charts.start / ok / fail` 日志（含耗时、error_kind、request_id） |
 
@@ -66,7 +66,7 @@ sequenceDiagram
 1. 持有全量数据，能提供 `columns` 与 ≤N 行 `data_sample`（可脱敏）；
 2. 封装 `askForChart(query, rows)` → `POST /v1/charts`（建议经自有后端代理，浏览器不直连 server）；
 3. 处理状态码：`200` → SDK 生成 option；`422`（clarification/validation）→ 展示 errors 引导改述；`503` → 提示重试；全链路记录 `request_id`；
-4. `buildHighcharts(rows, spec)`（Highcharts）或 `buildECharts(rows, spec)`（ECharts，经 flint-js）——**全量数据不出域**；
+4. `buildHighcharts(rows, spec)`（Highcharts）或 `buildECharts(rows, spec)`（ECharts）——两者均经 vendored flint-js 编译，**全量数据不出域**；
 5. 用返回的 option 交给现有图表组件渲染。
 
 ## 四、数据边界（红线，D8/D13）
