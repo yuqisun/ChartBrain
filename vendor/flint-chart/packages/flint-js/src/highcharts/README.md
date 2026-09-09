@@ -91,8 +91,10 @@ Highcharts paths.
   `src/echarts/templates/line.ts` / `slope.ts`), while its time/value axes keep
   raw points. ChartBrain's SDK transform runtime pre-aggregates in
   `transform_plan` (`aggregate` step), so real inputs have one row per
-  `(x, series)` and the two backends agree point-for-point — verified by a
-  300-trial randomized differential test.
+  `(x, series)` and the two backends agree point-for-point. That agreement is
+  exercised deterministically by the committed dual-backend gate
+  `scripts/chart-parity.mjs` (11 chart types, deduped fixtures; run
+  `node scripts/chart-parity.mjs`).
 
 ## Shared helpers
 
