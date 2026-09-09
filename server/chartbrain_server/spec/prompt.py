@@ -242,6 +242,36 @@ def build_user_prompt(req: ChartRequest) -> str:
                 },
             },
             {
+                "query": "Break down total revenue by region in a pie chart",
+                "columns": [
+                    {"name": "region", "type": "string"},
+                    {"name": "revenue", "type": "number"},
+                ],
+                "chart_spec": {
+                    "schema_version": 1,
+                    "chart": {"type": "pie", "title": "Regional revenue breakdown"},
+                    "transform_plan": {
+                        "steps": [
+                            {
+                                "op": "aggregate",
+                                "group_by": ["region"],
+                                "measures": [
+                                    {
+                                        "field": "revenue",
+                                        "agg": "sum",
+                                        "as": "region_revenue",
+                                    }
+                                ],
+                            }
+                        ]
+                    },
+                    "encodings": {
+                        "x": {"field": "region", "value_type": "categorical"},
+                        "y": {"field": "region_revenue", "value_type": "numeric"},
+                    },
+                },
+            },
+            {
                 "query": "Show each region's share of total revenue",
                 "columns": [
                     {"name": "region", "type": "string"},
