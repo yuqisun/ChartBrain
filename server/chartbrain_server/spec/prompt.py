@@ -25,8 +25,7 @@ Output JSON shape (field details follow the schema description in the user messa
 }
 
 Hard rules:
-1. chart.type must be one of: bar | line | pie | scatter | area |
-   groupedBar | stackedBar | donut | slope | connectedScatter | strip.
+1. chart.type must be one of: bar | line | pie | scatter | area | groupedBar | stackedBar | donut | slope | connectedScatter | strip.
 2. Any data processing must be expressed declaratively in transform_plan.steps, using ONLY these
    operators: filter | aggregate | sort | limit | derive | binTime. Use at most 6 steps.
    - filter:    { "op":"filter", "field":"col", "operator":"eq|neq|gt|gte|lt|lte|between|in|contains", "value":..., "values":[...] }
