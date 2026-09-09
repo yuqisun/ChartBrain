@@ -6,6 +6,7 @@
  * 用法：
  *   node scripts/chart-parity.mjs                    # 用 vendor 的 dist
  *   node scripts/chart-parity.mjs --dist <dir>       # 用任意构建产物目录（须含 *\/index.cjs 或 *\/index.js）
+ * 白名单一致性（schema/SDK/server 五处是否同步）：node scripts/check-chart-types.mjs
  */
 import { createRequire } from 'node:module';
 import { existsSync } from 'node:fs';
