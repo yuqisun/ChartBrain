@@ -130,6 +130,21 @@ describe('highcharts backend smoke', () => {
     expect(option.tooltip.pointFormat).toContain('{point.percentage');
   });
 
+  it('Donut Chart → pie with a hole', () => {
+    const option = assembleHighcharts({
+      ...CATEGORICAL_BASE,
+      chart_spec: {
+        chartType: 'Donut Chart',
+        encodings: { color: { field: 'region' }, size: { field: 'revenue' } },
+      },
+    }) as any;
+
+    expect(option.chart.type).toBe('pie');
+    expect(option.series[0].type).toBe('pie');
+    expect(option.series[0].innerSize).toBe('50%');
+    expect(option.series[0].data).toHaveLength(2);
+  });
+
   it('applies the spec title and layout-derived canvas size', () => {
     const option = assembleHighcharts({
       ...CATEGORICAL_BASE,

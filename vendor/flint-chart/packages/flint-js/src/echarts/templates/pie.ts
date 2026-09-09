@@ -218,3 +218,24 @@ export const ecPieChartDef: ChartTemplateDef = {
         } as ChartPropertyDef,
     ],
 };
+
+/** The hole a Donut Chart gets when the caller sets no `innerRadius`. */
+const DONUT_DEFAULT_INNER_RADIUS = 50;
+
+export const ecDonutChartDef: ChartTemplateDef = {
+    ...ecPieChartDef,
+    chart: 'Donut Chart',
+    properties: (ecPieChartDef.properties ?? []).map(p =>
+        p.key === 'innerRadius' ? { ...p, defaultValue: DONUT_DEFAULT_INNER_RADIUS } : p,
+    ) as ChartPropertyDef[],
+    instantiate: (spec, ctx) => {
+        const innerRadius = ctx.chartProperties?.innerRadius;
+        const withHole = innerRadius == null
+            ? {
+                ...ctx,
+                chartProperties: { ...(ctx.chartProperties ?? {}), innerRadius: DONUT_DEFAULT_INNER_RADIUS },
+            }
+            : ctx;
+        ecPieChartDef.instantiate(spec, withHole);
+    },
+};
