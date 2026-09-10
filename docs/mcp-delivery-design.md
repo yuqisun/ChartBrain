@@ -4,7 +4,7 @@
 > 目的：把「ChartBrain 未来做 MCP 交付时必须遵守的约束」与「为什么」一次写清，避免后来者重新论证。
 > 参照对象：Microsoft `flint-mcp`（`D:\work\aichart\flint-chart\packages\flint-mcp`）与 `D:\work\aichart\flint-chart\agent-skills\flint-chart-author\SKILL.md`。
 > 上游依据：D10（`docs/design.md:42`）、M6（`docs/design.md:302`）、D13（`docs/design.md:45`）、D15（`docs/design.md:47`）。
-> 引用口径：本文件写作期间分支从 `fb2810a` 前进到 `9792fe3`（新增 `POST /v1/validate`、`GET /v1/chart-types`、`repair_rounds`、目录化的守卫与 prompt）。**文中 `file:line` 均按 `9792fe3` 的提交内容复核**；`scripts/check-chart-types.mjs` 与 `server/chartbrain_server/spec/prompt.py` 两处在写作时仍在被并发修改（工作区有未提交改动），因此凡引用这两个文件之处都同时给出**符号/内容锚点**，行号漂移时按符号 grep 即可。
+> 引用口径：本文件写作期间分支从 `fb2810a` 前进到 `9792fe3`（新增 `POST /v1/validate`、`GET /v1/chart-types`、`repair_rounds`、目录化的守卫与 prompt）。**文中 `file:line` 均按 `9792fe3` 的提交内容复核**；`scripts/check-chart-types.mjs` 与 `server/chartbrain_server/spec/prompt.py` 两处在写作时仍在被并发修改（工作区有未提交改动），因此凡引用这两个文件之处都同时给出**符号/内容锚点**，行号漂移时按符号 grep 即可。**已知后续漂移**：`9689661`（F4）在 `routes.py` 顶部 docstring 补写了「请求体本身不合法仍是 422」的边界说明，该文件行号整体下移（`/v1/validate` 由 `:71-86` 移到 `:74-93`）——本文引用仍按 `9792fe3` 复核，对不上时同样按符号 grep。
 
 ---
 
@@ -113,7 +113,7 @@ flint-mcp 把可复用知识做成 resources：`flint://agent-skill`（`flint-mc
 
 ### 4.1 `validate_spec` 的返回形状
 
-`validate_spec` **必须**原样返回 `POST /v1/validate` 的响应体，不做二次包装。该端点（`routes.py:71-86`）的响应模型就是三件套（`models.py:54-59`），并且**始终 200**——校验结果是 payload，不是 HTTP 错误（`routes.py:11-12`）：
+`validate_spec` **必须**原样返回 `POST /v1/validate` 的响应体，不做二次包装。该端点（`routes.py:71-86`）的响应模型就是三件套（`models.py:54-59`），并且 **spec 层面的任何校验结论都始终 200**——校验结果是 payload，不是 HTTP 错误（`routes.py:11-12`）；**请求体本身不合法**（缺/写错 `spec`、`Column.type` 取值非法）仍由 FastAPI 直接返回 422，那不是校验结论——消费端仍须处理 422，不能只写「恒 200 → 解析 payload」这一条分支：
 
 | 字段 | 含义 | 来源 |
 |---|---|---|
@@ -123,7 +123,7 @@ flint-mcp 把可复用知识做成 resources：`flint://agent-skill`（`flint-mc
 
 注意 `warnings` 的语义已经落地为一个**能力覆盖说明**：调用方据此知道这次结果只覆盖了 L1。MCP 工具必须把这条警告透传给 agent，否则 agent 会误以为「校验通过 = 完全合法」。
 
-与 `POST /v1/charts` 的关系：MCP 的 `validate_spec` 等价于「只跑 L1/L2，不跑 LLM」。实现时**必须直接调用** `validate_chart_spec`（`spec/validate.py:37-53`），它与生成管线共用同一套 `validate_spec` / `validate_l2_columns`，从而保证「`/v1/charts` 判过 = `/v1/validate` 判过」。`spec/validate.py:1-4` 已注明该三件套形态是**借用 flint-mcp 的 `validate_chart`**（`flint-mcp/src/tools/validate.ts:9-20`）——MCP 交付时这条借鉴已经落在服务端，工具层无需再设计。
+与 `POST /v1/charts` 的关系：MCP 的 `validate_spec` 等价于「只跑 L1/L2，不跑 LLM」。实现时**必须直接调用** `validate_chart_spec`（`spec/validate.py:37-53`），它与生成管线共用同一套 `validate_spec` / `validate_l2_columns`：**`columns` 非空时，`/v1/validate` 与 `/v1/charts` 的判定逐字相同**（同一实现，同样的错误串）。但**这不是等价关系**：不传 `columns`（或传 `[]`）时 `/v1/validate` 只跑 L1，`valid: true` **不**蕴含可交付——一个 `encodings.y` 指向不存在列的 spec 在这种情况下照样返回 `valid: true` / `errors: []`，只有 `warnings` 里那条「L2 skipped…」说明本次结论只覆盖 L1（`spec/validate.py:22-25`、`:49-50`）；而 `/v1/charts` 到不了这个状态：`ChartRequest.columns` 是 `min_length=1`（`models.py:30`），每个真实请求都跑 L2，同一个 spec 只会得到 422（同一份 spec 传给 `columns` 非空的 `/v1/validate` 时也是 `valid: false` + 同名 L2 错误）。`spec/validate.py:1-4` 已注明该三件套形态是**借用 flint-mcp 的 `validate_chart`**（`flint-mcp/src/tools/validate.ts:9-20`）——MCP 交付时这条借鉴已经落在服务端，工具层无需再设计。
 
 ### 4.2 错误必须可自修复
 
@@ -222,7 +222,7 @@ flint-mcp 把可复用知识做成 resources：`flint://agent-skill`（`flint-mc
 
 - spec 侧版本由 `schema_version` 承担（`specs/chart-spec.schema.json:10` 的 `const: 1`）；MCP 工具的输入输出都带它，不做隐式升级。
 - 图型目录有独立 `schema_version`（`specs/chart-types.json:3`），资源正文应一并返回，便于 agent 判断自己看到的是哪一版。
-- 错误语义与 REST 保持一致：422（澄清 / 校验失败）与 503（provider 故障）的区分见 `docs/INTEGRATION.md:132-142` 与 `routes.py:106-114`。MCP 工具应把它映射为**结构化结果**而非传输层错误——先例是 flint-mcp 的 `validate_chart`「never throws」（`flint-mcp/src/tools/validate.ts:22-26`、`:47-56`），而我们这边 `/v1/validate` 已经采用同一约定：**始终 200，校验结果就是响应体**（`routes.py:11-12`、`:71-86`）。`validate_spec` 工具必须保留这个语义，不能把 `valid: false` 变成 MCP 工具错误。
+- 错误语义与 REST 保持一致：422（澄清 / 校验失败）与 503（provider 故障）的区分见 `docs/INTEGRATION.md:132-142` 与 `routes.py:106-114`。MCP 工具应把它映射为**结构化结果**而非传输层错误——先例是 flint-mcp 的 `validate_chart`「never throws」（`flint-mcp/src/tools/validate.ts:22-26`、`:47-56`），而我们这边 `/v1/validate` 已经采用同一约定：**spec 层面的判定始终 200，校验结果就是响应体**；请求体自身不合法（缺/写错 `spec`、`Column.type` 取值非法）仍是 FastAPI 的 422，不由该校验决定（`routes.py:11-12`、`:71-86`）。`validate_spec` 工具必须保留这个语义，不能把 `valid: false` 变成 MCP 工具错误。
 
 ---
 
