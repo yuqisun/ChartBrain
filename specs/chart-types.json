@@ -1,0 +1,89 @@
+{
+  "$comment": "ChartBrain 图型目录 —— 单一事实源（single source of truth）。本文件是「中性 spec 支持哪些 chart.type、每个图型要哪些通道、需要哪些 Highcharts 模块、什么时候该选它」的唯一权威定义。五处代码白名单（specs/chart-spec.schema.json 的 chart.type 枚举、sdk/src/types.ts 的 ChartType、两个转换器的 FLINT_CHART_TYPE、server/.../spec/prompt.py 规则 1）与 sdk/src/converter/validate.ts 的 REQUIRED_CHANNELS 都必须与本文件一致，由 scripts/check-chart-types.mjs 强制校验。新增图型时先改本文件，再让守卫告诉你还有哪几处没跟上。",
+  "schema_version": 1,
+  "types": [
+    {
+      "type": "bar",
+      "flint": "Bar Chart",
+      "required_channels": ["x", "y"],
+      "hc_modules": [],
+      "selection": "比较若干类目的单个度量（类目数适中、标签较长时优先）。"
+    },
+    {
+      "type": "line",
+      "flint": "Line Chart",
+      "required_channels": ["x", "y"],
+      "hc_modules": [],
+      "selection": "时间序列上的趋势（一个或多个系列随连续时间变化）。"
+    },
+    {
+      "type": "area",
+      "flint": "Area Chart",
+      "required_channels": ["x", "y"],
+      "hc_modules": [],
+      "selection": "时间序列趋势且要强调累积量或整体体量时用（多个系列会堆叠）。"
+    },
+    {
+      "type": "pie",
+      "flint": "Pie Chart",
+      "required_channels": ["x", "y"],
+      "hc_modules": [],
+      "selection": "少量类目（≤ 6）的占比构成，且没有时间维度。"
+    },
+    {
+      "type": "scatter",
+      "flint": "Scatter Plot",
+      "required_channels": ["x", "y"],
+      "hc_modules": [],
+      "selection": "两个数值变量之间的关系（相关性、离群点），顺序无意义。"
+    },
+    {
+      "type": "groupedBar",
+      "flint": "Grouped Bar Chart",
+      "required_channels": ["x", "y"],
+      "hc_modules": [],
+      "selection": "类目 × 分组，需要并排比较各分组的度量（对比而非构成）。"
+    },
+    {
+      "type": "stackedBar",
+      "flint": "Stacked Bar Chart",
+      "required_channels": ["x", "y"],
+      "hc_modules": [],
+      "selection": "类目 × 分组，且关心各分组对总量的贡献（构成及其变化）。"
+    },
+    {
+      "type": "donut",
+      "flint": "Donut Chart",
+      "required_channels": ["x", "y"],
+      "hc_modules": [],
+      "selection": "同 pie，但需要在中心显示总量或需要更强的视觉对比时用。"
+    },
+    {
+      "type": "slope",
+      "flint": "Slope Chart",
+      "required_channels": ["x", "y"],
+      "hc_modules": [],
+      "selection": "只有两个时间点（两期）时，比较各类目的变化幅度与方向。"
+    },
+    {
+      "type": "connectedScatter",
+      "flint": "Connected Scatter Plot",
+      "required_channels": ["x", "y"],
+      "hc_modules": [],
+      "selection": "两个数值变量且顺序有意义（路径/轨迹，例如随时间推进的状态）。"
+    },
+    {
+      "type": "strip",
+      "flint": "Strip Plot",
+      "required_channels": ["x", "y"],
+      "hc_modules": [],
+      "selection": "单个度量在一个或多个类目上的分布（离散点，看散开程度而非汇总）。"
+    }
+  ],
+  "selection_policy": [
+    "多个图型都能表达同一问题时，选最能直接回答问题的那个，不要为了视觉升级复杂度。",
+    "占比问题在类目多于 6 个时不要用 pie/donut，改用 bar。",
+    "有时间维度就用 line/area/slope（两期用 slope），不要用 bar 代替时间序列。",
+    "任何图型只要必需通道填不出来，就不要选它——宁可输出 {\"error\": ...} 让用户澄清。"
+  ]
+}
