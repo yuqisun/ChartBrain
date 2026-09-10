@@ -1,38 +1,48 @@
 #!/usr/bin/env node
 /**
- * 图型一致性检查：图型目录 specs/chart-types.json 是单一事实源（single source of truth）。
+ * 图型一致性检查（纯静态，不导入 Python、不起子进程）：图型目录 specs/chart-types.json 是
+ * 单一事实源（single source of truth）。
  *
- * 白名单六处（新增图型时必须全部同步；第 1 处是基准，其余各处向它看齐）：
+ * 白名单五处（新增图型时必须全部同步；第 1 处是基准，其余各处向它看齐）：
  *   1. specs/chart-types.json                   → types[].type
  *   2. specs/chart-spec.schema.json             → chart.type enum
  *   3. sdk/src/types.ts                         → ChartType union 字面量
  *   4. sdk/src/converter/highcharts.ts          → FLINT_CHART_TYPE 的键
  *   5. sdk/src/converter/echarts.ts             → FLINT_CHART_TYPE 的键
- *   6. server/chartbrain_server/spec/prompt.py  → 规则 1 的 chart.type must be one of 列表
  *
- * 目录字段与下游代码的一致性：
- *   7. types[].flint             == 两个转换器里的 Flint 名称
- *   8. types[].required_channels == sdk/src/converter/validate.ts 的 REQUIRED_CHANNELS
- *   9. types[].selection 非空、selection_policy 为非空数组
- *  10. 渲染后的 SYSTEM_PROMPT 含每个图型的选型行（白名单与选型段都由目录渲染）
+ * prompt.py 规则 1 不列为独立来源：它已由目录在 import 时渲染（__CHART_TYPES__ 占位符），
+ * 手写副本不可能再漂移；它的「渲染结果」由 pytest 断言（见下）。
  *
- * 注：prompt.py 在 import 时用目录渲染规则 1 与选型段，源码里只剩占位符，所以第 6/10 项
- * 校验的是「渲染后」的 SYSTEM_PROMPT：本脚本用 python 导入 prompt.py 并把文本落到临时
- * 文件再读回（受限环境下不能用 stdio 管道），可用 CHARTBRAIN_PYTHON 指定解释器。
+ * 目录字段与下游代码 / prompt 接线的一致性（全部静态可判定）：
+ *   6. types[].flint             == 两个转换器里的 Flint 名称
+ *   7. types[].required_channels == sdk/src/converter/validate.ts 的 REQUIRED_CHANNELS
+ *   8. types[].selection 非空、selection_policy 为非空数组
+ *   9. prompt.py 仍是「目录渲染」接线：模板含 __CHART_TYPES__ / __SELECTION_GUIDANCE__ 占位符，
+ *      有对应的 .replace(...) 调用，且 _chart_type_names() / _selection_guidance() 确实从
+ *      load_chart_types() 取数
+ *  10. prompt.py 未硬编码图型枚举。启发式：两处不同的目录图型名之间只隔 ≤16 个非单词字符
+ *      （含跨行）即视为枚举；few-shot 里单个 "type": "<图型>" 字面量与散文提及（如 "pie chart"）
+ *      不算。它证明的是「没有手写枚举」，不证明「渲染出来的文本正确」——后者归 pytest。
+ *
+ * 本脚本只做静态检查：跨语言白名单门禁不应因缺 Python 运行时或服务端依赖（pydantic/dotenv）变红。
+ * 渲染后的 SYSTEM_PROMPT 由配套门禁断言：
+ *   python -m pytest server/tests/test_prompt.py
+ *     → 规则 1 列表 == 目录类型集合、每图型选型行、selection_policy 条目、必需通道保证
  *
  * 用法：
  *   node scripts/check-chart-types.mjs
  *     exit 0：全部一致
- *     exit 1：目录与代码不一致（打印差异）
- *     exit 2：文件读取 / 解析 / prompt 渲染失败（环境问题）
+ *     exit 1：目录与代码 / prompt 接线不一致（打印差异）
+ *     exit 2：文件读取或解析失败（环境问题，与图型一致性无关）
  */
-import { readFileSync, unlinkSync } from 'node:fs';
-import { spawnSync } from 'node:child_process';
-import os from 'node:os';
+import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
 const root = path.resolve(import.meta.dirname, '..');
 const read = (p) => readFileSync(path.join(root, p), 'utf8').replace(/\r/g, '');
+
+const CATALOG_FILE = 'specs/chart-types.json';
+const PROMPT_FILE = 'server/chartbrain_server/spec/prompt.py';
 
 /** 取 FLINT_CHART_TYPE: Record<ChartType, string> = { ... }; 的键。 */
 function parseMapKeys(txt) {
@@ -65,76 +75,39 @@ function parseRequiredChannels(txt) {
   return out;
 }
 
-/**
- * 渲染 prompt.py 的 SYSTEM_PROMPT（import 时由目录生成，源码里是占位符）。
- * 输出经临时文件传递，避免依赖 stdio 管道；失败按环境问题处理（exit 2）。
- */
-function renderSystemPrompt() {
-  const outFile = path.join(os.tmpdir(), `chartbrain-system-prompt-${process.pid}.txt`);
-  const code = [
-    'import os',
-    'try:',
-    '    from chartbrain_server.spec.prompt import SYSTEM_PROMPT as _prompt',
-    'except Exception as _exc:',
-    '    _prompt = "CHARTBRAIN_RENDER_ERROR: " + repr(_exc)',
-    'with open(os.environ["CHARTBRAIN_PROMPT_OUT"], "w", encoding="utf-8") as _fh:',
-    '    _fh.write(_prompt)',
-  ].join('\n');
-  const candidates = [process.env.CHARTBRAIN_PYTHON, 'python3', 'python', 'py'].filter(Boolean);
-  const tried = [];
-  for (const exe of candidates) {
-    const r = spawnSync(exe, ['-c', code], {
-      cwd: root,
-      stdio: 'ignore',
-      env: {
-        ...process.env,
-        PYTHONPATH: path.join(root, 'server'),
-        CHARTBRAIN_PROMPT_OUT: outFile,
-      },
-    });
-    if (r.error || r.status !== 0) {
-      tried.push(`${exe}: ${r.error ? r.error.code : `exit ${r.status}`}`);
-      continue;
-    }
-    let text = '';
-    try {
-      text = readFileSync(outFile, 'utf8');
-    } catch {
-      tried.push(`${exe}: 未写出临时文件`);
-      continue;
-    }
-    try {
-      unlinkSync(outFile);
-    } catch {
-      /* 临时文件清理失败不影响校验 */
-    }
-    if (text.startsWith('CHARTBRAIN_RENDER_ERROR: ')) {
-      tried.push(`${exe}: ${text.trim()}`);
-      continue;
-    }
-    return { text: text.replace(/\r/g, ''), exe };
+/** 读取仓库内文件；失败按环境问题处理（exit 2）。 */
+function readOrExit(file, label) {
+  try {
+    return read(file);
+  } catch (e) {
+    console.error(`✗ ${label}\n    读取失败：${e.message}\n    文件：${file}`);
+    process.exit(2);
   }
-  console.error('✗ 无法渲染 SYSTEM_PROMPT（prompt.py 的规则 1 与选型段由 specs/chart-types.json 生成）');
-  console.error(`    已尝试：${tried.join(' | ') || '（未找到 python 解释器）'}`);
-  console.error('    可用 CHARTBRAIN_PYTHON=<解释器> 指定后重跑');
-  process.exit(2);
 }
 
+/** 取 Python 源码里某个函数的函数体（到下一个顶层 def 之前）。 */
+function bodyOf(src, name) {
+  const start = src.indexOf(`def ${name}(`);
+  if (start < 0) return null;
+  const next = src.indexOf('\ndef ', start + 1);
+  return src.slice(start, next < 0 ? src.length : next);
+}
+
+const catalogSrc = readOrExit(CATALOG_FILE, 'specs/chart-types.json（图型目录）');
 let catalog;
 try {
-  catalog = JSON.parse(read('specs/chart-types.json'));
+  catalog = JSON.parse(catalogSrc);
 } catch (e) {
-  console.error(`✗ specs/chart-types.json（图型目录）\n    读取失败：${e.message}\n    文件：specs/chart-types.json`);
+  console.error(`✗ specs/chart-types.json（图型目录）\n    解析失败：${e.message}\n    文件：${CATALOG_FILE}`);
   process.exit(2);
 }
 const catalogTypes = catalog.types.map((t) => t.type);
-const rendered = renderSystemPrompt();
-console.log(`· SYSTEM_PROMPT 渲染来源：${rendered.exe}（用于第 6/10 项校验）`);
+const promptSrc = readOrExit(PROMPT_FILE, 'server/chartbrain_server/spec/prompt.py');
 
 const sources = [
   {
     name: 'specs/chart-types.json（types[].type，基准）',
-    file: 'specs/chart-types.json',
+    file: CATALOG_FILE,
     parse: () => catalogTypes,
   },
   {
@@ -161,18 +134,6 @@ const sources = [
     file: 'sdk/src/converter/echarts.ts',
     parse: parseMapKeys,
   },
-  {
-    name: 'server/chartbrain_server/spec/prompt.py（规则 1 列表，渲染后）',
-    file: 'server/chartbrain_server/spec/prompt.py',
-    parse: () => {
-      const m = rendered.text.match(/chart\.type must be one of:\s*([^\n]+)/);
-      if (!m) throw new Error('渲染后的 SYSTEM_PROMPT 找不到 "chart.type must be one of:" 列表');
-      return m[1]
-        .split('|')
-        .map((s) => s.trim().replace(/\.$/, ''))
-        .filter(Boolean);
-    },
-  },
 ];
 
 /** 解析并打印每个来源的集合；解析失败按环境问题处理（exit 2）。 */
@@ -188,6 +149,8 @@ for (const s of sources) {
   }
 }
 
+console.log(`· ${PROMPT_FILE} 规则 1 由目录生成，不列为独立来源；其渲染结果由 pytest 断言（server/tests/test_prompt.py）`);
+
 const [anchor, ...rest] = parsed;
 const expect = [...anchor.set].sort();
 const norm = (a) => a.join(',');
@@ -196,7 +159,7 @@ const fail = (msg) => {
   bad++;
   console.error(`✗ ${msg}`);
 };
-/** 跑一段目录字段校验；无失败则打印 ✓ 行（保持既有输出风格）。 */
+/** 跑一段校验；无失败则打印 ✓ 行（保持既有输出风格）。 */
 const check = (label, fn) => {
   const before = bad;
   fn();
@@ -214,15 +177,12 @@ for (const s of rest) {
 }
 if (bad === 0) console.log(`✓ ${sources.length} 处白名单集合一致（${anchor.set.length} 种）`);
 
-// 7. 目录 flint 名称 == 两个转换器的 Flint 名称
+// 6. 目录 flint 名称 == 两个转换器的 Flint 名称
 check(`types[].flint 与两个转换器一致（${catalogTypes.length} 图型）`, () => {
-  for (const [file, parser] of [
-    ['sdk/src/converter/highcharts.ts', parseFlintMap],
-    ['sdk/src/converter/echarts.ts', parseFlintMap],
-  ]) {
+  for (const file of ['sdk/src/converter/highcharts.ts', 'sdk/src/converter/echarts.ts']) {
     let map;
     try {
-      map = parser(read(file));
+      map = parseFlintMap(read(file));
     } catch (e) {
       console.error(`✗ ${file}\n    读取失败：${e.message}\n    文件：${file}`);
       process.exit(2);
@@ -235,7 +195,7 @@ check(`types[].flint 与两个转换器一致（${catalogTypes.length} 图型）
   }
 });
 
-// 8. 目录 required_channels == validate.ts 的 REQUIRED_CHANNELS
+// 7. 目录 required_channels == validate.ts 的 REQUIRED_CHANNELS
 check(`types[].required_channels 与 validate.ts REQUIRED_CHANNELS 一致（${catalogTypes.length} 图型）`, () => {
   let table;
   try {
@@ -254,7 +214,7 @@ check(`types[].required_channels 与 validate.ts REQUIRED_CHANNELS 一致（${ca
   }
 });
 
-// 9. 目录自身字段完整：selection 非空、selection_policy 非空
+// 8. 目录自身字段完整：selection 非空、selection_policy 非空
 check(`types[].selection 非空（${catalogTypes.length}/${catalogTypes.length}）、selection_policy 非空`, () => {
   for (const t of catalog.types) {
     if (typeof t.selection !== 'string' || t.selection.trim() === '') {
@@ -266,18 +226,55 @@ check(`types[].selection 非空（${catalogTypes.length}/${catalogTypes.length}�
   }
 });
 
-// 10. 渲染后的 SYSTEM_PROMPT 必须含每个图型的选型行
-check(`渲染后的 SYSTEM_PROMPT 含全部选型行（${catalogTypes.length}/${catalogTypes.length}）`, () => {
-  for (const t of catalog.types) {
-    const line = `${t.type} — ${t.selection}`;
-    if (!rendered.text.includes(line)) {
-      fail(`SYSTEM_PROMPT 缺选型行：${line}`);
+// 9. prompt.py 仍是「目录渲染」接线（占位符 + .replace 调用 + 渲染器从目录取数）
+check('prompt.py 规则 1 与选型段仍由目录渲染（占位符 + .replace 调用 + 取数来源）', () => {
+  if (!/chart\.type must be one of:\s*__CHART_TYPES__\./.test(promptSrc)) {
+    fail('prompt.py 规则 1 不再是占位符（应形如 "1. chart.type must be one of: __CHART_TYPES__."）');
+  }
+  if (!/__SELECTION_GUIDANCE__/.test(promptSrc)) {
+    fail('prompt.py 模板缺 __SELECTION_GUIDANCE__ 占位符（选型段应由目录渲染）');
+  }
+  if (!/\.replace\(\s*"__CHART_TYPES__"\s*,\s*"\s\|\s"\.join\(\s*_chart_type_names\(\)\s*\)\s*\)/.test(promptSrc)) {
+    fail('prompt.py 缺 .replace("__CHART_TYPES__", " | ".join(_chart_type_names())) 调用');
+  }
+  if (!/\.replace\(\s*"__SELECTION_GUIDANCE__"\s*,\s*_selection_guidance\(\)\s*\)/.test(promptSrc)) {
+    fail('prompt.py 缺 .replace("__SELECTION_GUIDANCE__", _selection_guidance()) 调用');
+  }
+  const namesBody = bodyOf(promptSrc, '_chart_type_names');
+  if (namesBody === null) {
+    fail('prompt.py 找不到 _chart_type_names()');
+  } else if (!/load_chart_types\(\)/.test(namesBody)) {
+    fail('prompt.py 的 _chart_type_names() 不再从 load_chart_types() 取图型');
+  }
+  const guidanceBody = bodyOf(promptSrc, '_selection_guidance');
+  if (guidanceBody === null) {
+    fail('prompt.py 找不到 _selection_guidance()');
+  } else {
+    if (!/\['selection'\]/.test(guidanceBody)) fail("prompt.py 的 _selection_guidance() 不再取目录的 ['selection']");
+    if (!/selection_policy/.test(guidanceBody)) fail('prompt.py 的 _selection_guidance() 不再取目录的 selection_policy');
+  }
+});
+
+// 10. prompt.py 未硬编码图型枚举（启发式，见文件头说明）
+check('prompt.py 未硬编码图型枚举（两处图型名间仅隔 ≤16 个非单词字符即视为枚举）', () => {
+  const alternation = [...catalogTypes].sort((a, b) => b.length - a.length).join('|');
+  const re = new RegExp(`\\b(${alternation})\\b[^A-Za-z0-9_]{0,16}\\b(${alternation})\\b`, 'g');
+  const seenLines = new Map();
+  let m;
+  while ((m = re.exec(promptSrc)) !== null) {
+    if (m[1] !== m[2]) {
+      const line = promptSrc.slice(0, m.index).split('\n').length;
+      if (!seenLines.has(line)) seenLines.set(line, m[0].replace(/\s+/g, ' '));
     }
+    re.lastIndex = m.index + m[0].length;
+  }
+  for (const [line, text] of [...seenLines].slice(0, 5)) {
+    fail(`prompt.py 第 ${line} 行疑似硬编码图型枚举：${JSON.stringify(text)}\n    白名单/选型段应由目录渲染；few-shot 里单个 "type": "<图型>" 字面量不算`);
   }
 });
 
 if (bad === 0) {
-  console.log(`\n✅ 图型目录与 5 处代码白名单 + REQUIRED_CHANNELS + prompt 选型段一致（${anchor.set.length} 种）`);
+  console.log(`\n✅ 目录与 ${sources.length} 处静态来源一致（${anchor.set.length} 种）；渲染后的 prompt 由 server/tests/test_prompt.py 断言`);
   process.exit(0);
 }
 console.error(`\n✗ 共 ${bad} 处与 ${anchor.file} 不一致，请同步后重跑`);

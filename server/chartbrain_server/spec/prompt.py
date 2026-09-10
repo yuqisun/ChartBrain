@@ -55,15 +55,6 @@ def _selection_guidance() -> str:
     return "\n".join(lines)
 
 
-def _render_system_prompt(template: str, parts: dict[str, str]) -> str:
-    """替换模板占位符；占位符缺失即报错，防止生成的段落静默消失。"""
-    for token, value in parts.items():
-        if token not in template:
-            raise RuntimeError(f"SYSTEM_PROMPT 模板缺少占位符 {token}")
-        template = template.replace(token, value)
-    return template
-
-
 _SYSTEM_PROMPT_TEMPLATE = """You are ChartBrain's chart-intent parser. Convert the user's natural-language request into one "neutral chart spec" JSON object.
 Output ONLY a single JSON object. Do not include any explanation, comment, or Markdown code block.
 
@@ -116,13 +107,11 @@ the question — hints below come from the chart-type catalog):
 __SELECTION_GUIDANCE__
 """
 
-SYSTEM_PROMPT = _render_system_prompt(
-    _SYSTEM_PROMPT_TEMPLATE,
-    {
-        "__CHART_TYPES__": " | ".join(_chart_type_names()),
-        "__SELECTION_GUIDANCE__": _selection_guidance(),
-    },
-)
+# 规则 1 与选型段都从目录渲染：脚本 scripts/check-chart-types.mjs 静态校验这两处替换接线，
+# 渲染结果（白名单集合、每图型选型行、策略条目、通道保证）由 server/tests/test_prompt.py 断言。
+SYSTEM_PROMPT = _SYSTEM_PROMPT_TEMPLATE.replace(
+    "__CHART_TYPES__", " | ".join(_chart_type_names())
+).replace("__SELECTION_GUIDANCE__", _selection_guidance())
 
 
 def build_user_prompt(req: ChartRequest) -> str:
