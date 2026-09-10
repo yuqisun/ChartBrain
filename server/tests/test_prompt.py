@@ -11,6 +11,12 @@ specs/chart-spec.schema.json 上：
 SYSTEM_PROMPT，因此同样需要守卫：目录里每个图型必须有选型行、每个 selection_policy
 条目必须出现在 prompt 里、每个图型的必需通道必须出现——否则新增图型后模型会拿到
 一份「白名单里有、但没说什么时候用」的 prompt。
+
+除了「有没有」，这里还钉住两件容易被漏掉的事：
+- **顺序**：规则 1 的 token 顺序与选型段的行序都逐位等于目录 types[] 顺序（此前只比集合，
+  重排目录会静默重排 prompt）；
+- **series / pie 语义**：series 是 groupedBar/stackedBar/slope/connectedScatter 的意图载体
+  （缺了会静默退化成单系列），pie/donut 的 x/y 是「分类→扇区 / 度量→大小」而不是柱状图的轴。
 """
 
 from __future__ import annotations
@@ -74,11 +80,27 @@ def _channel_groups() -> dict[tuple[str, ...], list[str]]:
     return groups
 
 
-def _prompt_whitelist() -> set[str]:
-    """从 SYSTEM_PROMPT 规则 1 抽出图型列表（one of: … 到规则 2 之间）。"""
+def _prompt_whitelist_order() -> list[str]:
+    """从 SYSTEM_PROMPT 规则 1 抽出图型 token，**按渲染顺序**（one of: … 到规则 2 之间）。"""
     m = re.search(r"chart\.type must be one of:(.*?)2\.", SYSTEM_PROMPT, re.DOTALL)
     assert m, "SYSTEM_PROMPT 规则 1 的白名单段缺失或改版"
-    return {tok.rstrip(".") for tok in re.split(r"\s*\|\s*", m.group(1).strip()) if tok}
+    return [tok.rstrip(".") for tok in re.split(r"\s*\|\s*", m.group(1).strip()) if tok]
+
+
+def _prompt_whitelist() -> set[str]:
+    """规则 1 的图型集合（顺序由 _prompt_whitelist_order 另行钉住）。"""
+    return set(_prompt_whitelist_order())
+
+
+def _policy_bullets_with(*needles: str) -> list[str]:
+    """selection_policy 里同时含全部 needles 的条目（用于按内容定位某条策略，而非按下标）。"""
+    return [b for b in _catalog()["selection_policy"] if all(n in b for n in needles)]
+
+
+def _policy_bullet_with(*needles: str) -> str:
+    hits = _policy_bullets_with(*needles)
+    assert len(hits) == 1, f"预期恰好一条策略条目同时包含 {needles}，实际 {len(hits)} 条：{hits}"
+    return hits[0]
 
 
 def _few_shot_chart_specs() -> list[dict]:
@@ -99,6 +121,30 @@ def test_prompt_whitelist_matches_schema_enum() -> None:
     assert whitelist == {t["type"] for t in _catalog_types()}, "规则 1 与 chart-types.json 漂移"
 
 
+def test_prompt_rule1_token_order_follows_catalog_order() -> None:
+    """规则 1 的 token 顺序必须逐位等于目录 types[].type 顺序。
+
+    上一个测试只比较集合，因此「渲染顺序」这个属性此前无人看守：把 _chart_type_names() 改成
+    sorted()、或在模板里手写一份顺序不同的列表，集合断言照样全绿，而模型看到的枚举顺序已经变了。
+    这里钉住的是「渲染顺序 == 文件顺序」；注意它**不**冻结目录的历史顺序（重排目录本身会同时
+    改变两侧、断言依旧通过）——真要冻结得手抄一份顺序副本，与目录单一事实源的设计相悖，故不取。
+    """
+    catalog_order = [t["type"] for t in _catalog_types()]
+    rendered = _prompt_whitelist_order()
+    assert rendered == catalog_order, (
+        f"规则 1 的 token 顺序 {rendered} 与目录 types[].type 顺序 {catalog_order} 不一致"
+    )
+
+
+def test_prompt_selection_lines_order_follows_catalog_order() -> None:
+    """选型段的「图型 — 说明」行也必须按目录顺序出现（逐图型提示的行序同样由目录决定）。"""
+    catalog_order = [t["type"] for t in _catalog_types()]
+    rendered = list(_prompt_selection_lines())
+    assert rendered == catalog_order, (
+        f"选型段行序 {rendered} 与目录 types[].type 顺序 {catalog_order} 不一致"
+    )
+
+
 def test_prompt_selection_lines_cover_every_catalog_type() -> None:
     """目录里每个图型都必须在选型段里有一行，否则模型只看到白名单、看不到何时用。"""
     assert set(_prompt_selection_lines()) == {t["type"] for t in _catalog_types()}
@@ -116,10 +162,58 @@ def test_prompt_includes_every_selection_policy_bullet() -> None:
         assert f"- {bullet}" in SYSTEM_PROMPT, f"SYSTEM_PROMPT 缺选型策略条目：{bullet}"
 
 
+def _channel_error_policy() -> str:
+    """目录里「必需通道填不出来就不要选它」那条策略。
+
+    按内容取而不是取 selection_policy[-1]：以前按下标取，等于把「error 策略必须排在最后」
+    这个无关约束焊进断言——新增一条策略就会把它挪走，测试却以「缺 error 策略」的假象失败。
+    """
+    return _policy_bullet_with("必需通道", "error")
+
+
+_SERIES_BEARING = ("groupedBar", "stackedBar", "slope", "connectedScatter")
+
+
+def test_prompt_documents_series_semantics() -> None:
+    """series 才是 groupedBar/stackedBar/slope/connectedScatter 的意图载体，prompt 必须说清。
+
+    没有这条说明时，`{"chart":{"type":"groupedBar"},"encodings":{x,y}}`（无 series）会一路
+    通过 L1 + 通道校验编成单系列柱状图——「并排比较各分组」静默丢失，且不抛错、无 warning。
+    """
+    bullet = _policy_bullet_with("series")
+    for name in _SERIES_BEARING:
+        assert name in bullet, f"series 语义条目没点名 {name}"
+    # 诚实兜底：没有分组列时降级为 bar/line，且不该为此输出 error
+    for fallback in ("bar", "line"):
+        assert fallback in bullet, f"series 语义条目缺兜底图型 {fallback}"
+    assert "降级" in bullet, "series 语义条目必须说明这是降级选择"
+    assert "error" in bullet, "series 语义条目必须交代「缺 series 不输出 error」"
+    # 兜底不得压过硬规则 6：请求点名了不存在的字段时仍要输出 error（否则两条规则打架）
+    assert "规则 6" in bullet, "series 语义条目必须交代与硬规则 6（缺字段 → error）的分界"
+    # 与 schema 保持一致：series 不是必需通道（schema 的 encodings 不强制任何通道）
+    encodings = load_schema()["properties"]["encodings"]
+    assert "series" in encodings["properties"], "schema 缺 series 通道，prompt 说明需同步"
+    assert "series" not in encodings.get("required", []), (
+        "series 若被 schema 强制为必需通道，prompt 的「可选」说明就过时了"
+    )
+
+
+def test_prompt_documents_pie_donut_channel_binding() -> None:
+    """pie/donut 的通道含义不是柱状图的 x 轴/y 轴：x=分类（→ 扇区）、y=度量（→ 扇区大小）。"""
+    bullet = _policy_bullet_with("pie", "donut", "扇区")
+    for name in ("pie", "donut"):
+        assert name in bullet, f"pie/donut 通道语义条目没点名 {name}"
+    for token in ("分类", "扇区", "度量", "大小"):
+        assert token in bullet, f"pie/donut 通道语义条目缺「{token}」"
+    assert "位置" in bullet, "必须提醒不要按位置把 x/y 读成柱状图的轴"
+    # 占比是图表按 y 的取值换算的，不是 LLM 输出的变换步骤（硬规则 5 不支持占比运算）
+    assert "占比" in bullet, "pie/donut 条目必须说明占比由图表换算、无需写占比变换"
+
+
 def test_prompt_keeps_required_channel_guarantee() -> None:
     """「必需通道填不出来就不要选它」的保证必须留在 prompt 里（目录策略 + 逐图型通道）。"""
     section = _selection_section()
-    assert _catalog()["selection_policy"][-1] in SYSTEM_PROMPT, "缺「通道填不出来就输出 error」策略"
+    assert _channel_error_policy() in SYSTEM_PROMPT, "缺「通道填不出来就输出 error」策略"
     assert "must NOT be chosen" in section, "缺「通道缺失不得选该图型」的英文保证"
     for channels, types in _channel_groups().items():
         expected = f"{' + '.join(channels)}: {', '.join(types)}."
