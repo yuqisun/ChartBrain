@@ -110,4 +110,5 @@ async def create_chart(req: ChartRequest) -> ChartResponse | JSONResponse:
         library=req.library,
         chart_spec=result.spec or {},
         warnings=result.warnings,
+        repair_rounds=result.repair_rounds,
     )

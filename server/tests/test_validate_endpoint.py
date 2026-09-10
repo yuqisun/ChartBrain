@@ -177,3 +177,39 @@ def test_validate_endpoint_applies_constraints_whitelist() -> None:
     body = resp.json()
     assert body["valid"] is False
     assert any("allowed_fields" in e for e in body["errors"])
+
+
+# ---------- B3：成功响应暴露 repair_rounds ----------
+
+
+def test_charts_success_includes_zero_repair_rounds() -> None:
+    resp = client.post(
+        "/v1/charts",
+        json={
+            "query": "每月营收",
+            "library": "highcharts",
+            "columns": [
+                {"name": "month", "type": "string"},
+                {"name": "revenue", "type": "number"},
+            ],
+        },
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["repair_rounds"] == 0
+    assert body["warnings"] == []
+
+
+def test_charts_failure_path_keeps_repair_rounds() -> None:
+    resp = client.post(
+        "/v1/charts",
+        json={
+            "query": "每月营收",
+            "library": "highcharts",
+            "columns": [{"name": "revenue", "type": "number"}],  # 缺 month
+        },
+    )
+    assert resp.status_code == 422
+    body = resp.json()
+    assert body["error_kind"] == "validation"
+    assert body["repair_rounds"] == 1

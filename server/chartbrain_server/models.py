@@ -69,3 +69,4 @@ class ChartResponse(BaseModel):
     library: Literal["highcharts", "echarts"]
     chart_spec: dict[str, Any]  # 中性 spec（含 transform_plan）
     warnings: list[str] = Field(default_factory=list)
+    repair_rounds: int = 0  # 产出该 spec 经历的修复轮数（0 = 一次通过）
