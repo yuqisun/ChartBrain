@@ -1,5 +1,5 @@
 {
-  "$comment": "ChartBrain 图型目录 —— 单一事实源（single source of truth）。本文件是「中性 spec 支持哪些 chart.type、每个图型要哪些通道、需要哪些 Highcharts 模块、什么时候该选它」的唯一权威定义。五处代码白名单（specs/chart-spec.schema.json 的 chart.type 枚举、sdk/src/types.ts 的 ChartType、两个转换器的 FLINT_CHART_TYPE、server/.../spec/prompt.py 规则 1）与 sdk/src/converter/validate.ts 的 REQUIRED_CHANNELS 都必须与本文件一致，由 scripts/check-chart-types.mjs 强制校验。新增图型时先改本文件，再让守卫告诉你还有哪几处没跟上。",
+  "$comment": "ChartBrain 图型目录 —— 单一事实源（single source of truth）。本文件是「中性 spec 支持哪些 chart.type、每个图型要哪些通道、需要哪些 Highcharts 模块、什么时候该选它」的唯一权威定义。必须与本文件一致的代码有：四处白名单（specs/chart-spec.schema.json 的 chart.type 枚举、sdk/src/types.ts 的 ChartType、sdk/src/converter/highcharts.ts 与 sdk/src/converter/echarts.ts 的 FLINT_CHART_TYPE 键），以及 sdk/src/converter/validate.ts 的 REQUIRED_CHANNELS 表（取值 = types[].required_channels）——两种关注点各自成对，由 scripts/check-chart-types.mjs 强制校验，同时该校验还检查本文件自身的不变量（types[].type 唯一、schema_version 为 ≥1 的整数、types[].flint 非空、required_channels 取值 ∈ {x, y, series}）。server/.../spec/prompt.py 的规则 1 与选型段不属于上述「副本」：它们在 import 时由本文件渲染（模板占位符 + 守卫静态校验接线 + pytest 断言渲染结果），改本文件即改 prompt。注意：各图型的 series 语义（分组/堆叠/多条路径）目前只写在 selection_policy 的散文里，没有对应字段、守卫也查不到它。新增图型时先改本文件，再让守卫告诉你还有哪几处没跟上。",
   "schema_version": 1,
   "types": [
     {
@@ -84,6 +84,8 @@
     "多个图型都能表达同一问题时，选最能直接回答问题的那个，不要为了视觉升级复杂度。",
     "占比问题在类目多于 6 个时不要用 pie/donut，改用 bar。",
     "有时间维度就用 line/area/slope（两期用 slope），不要用 bar 代替时间序列。",
-    "任何图型只要必需通道填不出来，就不要选它——宁可输出 {\"error\": ...} 让用户澄清。"
+    "任何图型只要必需通道填不出来，就不要选它——宁可输出 {\"error\": ...} 让用户澄清。",
+    "series 语义：groupedBar 用 series 做并排分组（分组比较）、stackedBar 用 series 做堆叠（构成）、slope 与 connectedScatter 用 series 拆出多条路径/轨迹。schema 里 series 是可选通道（通道校验只强制 x/y），但这四个图型要表达的意图恰恰由它承载——没有 series 它们会静默退化成单系列，并排比较/构成/多路径就丢了。所以选这四个图型时 series 必须指向一个真实存在的分组列，不许省略、更不许编造列名。若数据里确实没有可用的分组列，就把意图降级到单系列图型（分组比较 → bar，单条趋势 → line）：这是降级选择而不是猜，不必为此输出 {\"error\"}；但请求点名了不存在的字段时，仍按硬规则 6 输出 {\"error\"}。",
+    "pie/donut 的通道绑定与柱状图不同：x 是分类（→ 扇区），y 是度量（→ 扇区大小），不要按位置把它们读成柱状图的 x 轴/y 轴。扇区占比由图表按 y 的取值换算，不要为占比另写百分比/占比的 transform 步骤（占比运算不在支持范围内）。"
   ]
 }
