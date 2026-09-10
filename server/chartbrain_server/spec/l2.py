@@ -15,7 +15,7 @@ Rules (docs/design.md §5):
 
 from __future__ import annotations
 
-from ..models import ChartRequest
+from ..models import ChartRequest, Column, Constraints
 
 _NUMERIC_AGGS = {"sum", "avg", "min", "max"}
 _NUMERIC_OUTPUT_AGGS = _NUMERIC_AGGS | {"count", "countDistinct"}
@@ -28,18 +28,31 @@ _ARITH_OPS = {"add", "subtract", "multiply", "divide"}
 
 
 def validate_l2(spec: dict, req: ChartRequest) -> list[str]:
+    """返回错误列表；空列表 = 通过 L2。委托 validate_l2_columns（行为不变）。"""
+    return validate_l2_columns(spec, req.columns, req.constraints)
+
+
+def validate_l2_columns(
+    spec: dict,
+    columns: list[Column],
+    constraints: Constraints | None = None,
+) -> list[str]:
+    """L2 核心：只依赖列元数据（+ 可选约束），不依赖完整 ChartRequest。
+
+    供生成管线（validate_l2）与 /v1/validate 复用；校验规则与错误文案保持一致。
+    """
     errors: list[str] = []
-    base_types = {c.name: c.type for c in req.columns}
+    base_types = {c.name: c.type for c in columns}
     if not base_types:
         return ["L2: columns is empty; cannot validate"]
 
     allowed_fields: set[str] | None = None
     allowed_aggs: set[str] | None = None
-    if req.constraints:
-        if req.constraints.allowed_fields:
-            allowed_fields = set(req.constraints.allowed_fields)
-        if req.constraints.allowed_aggs:
-            allowed_aggs = set(req.constraints.allowed_aggs)
+    if constraints:
+        if constraints.allowed_fields:
+            allowed_fields = set(constraints.allowed_fields)
+        if constraints.allowed_aggs:
+            allowed_aggs = set(constraints.allowed_aggs)
 
     # current table: column -> type (evolves along the transform chain)
     typed: dict[str, str] = dict(base_types)

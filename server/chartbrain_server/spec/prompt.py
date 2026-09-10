@@ -5,15 +5,74 @@ Design constraints (docs/design.md §7 red lines):
 - fields may only reference original columns or columns produced/kept by prior transforms
   (column lifecycle);
 - requests beyond MVP capability (percent/ratio etc.) => output {"error": ...}; never invent columns.
+
+图型目录：SYSTEM_PROMPT 规则 1 的白名单与「什么时候选哪个图型」的选型段都由
+specs/chart-types.json（单一事实源）在 import 时渲染，改目录即改 prompt，
+避免白名单/选型说明与代码漂移。
 """
 
 from __future__ import annotations
 
 import json
+import re
+from functools import lru_cache
+from pathlib import Path
 
+from ..config import settings
 from ..models import ChartRequest
 
-SYSTEM_PROMPT = """You are ChartBrain's chart-intent parser. Convert the user's natural-language request into one "neutral chart spec" JSON object.
+
+def _default_catalog_path() -> Path:
+    return Path(settings.effective_specs_dir) / "chart-types.json"
+
+
+@lru_cache(maxsize=1)
+def load_chart_types(path: str | Path | None = None) -> dict:
+    """加载图型目录 specs/chart-types.json（路径解析同 validator.load_schema）。"""
+    catalog_path = Path(path) if path else _default_catalog_path()
+    with catalog_path.open("r", encoding="utf-8") as fh:
+        return json.load(fh)
+
+
+def _chart_type_names() -> list[str]:
+    return [t["type"] for t in load_chart_types()["types"]]
+
+
+def _selection_guidance() -> str:
+    """渲染选型段：每图型一行（何时选它）+ 选型策略 + 逐图型必需通道。"""
+    catalog = load_chart_types()
+    lines = [f"{t['type']} — {t['selection']}" for t in catalog["types"]]
+    lines += ["", "Selection policy:"]
+    lines += [f"- {p}" for p in catalog["selection_policy"]]
+    lines += [
+        "",
+        "Required channels (a type whose required channels cannot be filled must NOT be "
+        'chosen — output {"error":"explain"} and ask the user to clarify instead):',
+    ]
+    groups: dict[tuple[str, ...], list[str]] = {}
+    for t in catalog["types"]:
+        groups.setdefault(tuple(t["required_channels"]), []).append(t["type"])
+    lines += [f"{' + '.join(chs)}: {', '.join(types)}." for chs, types in groups.items()]
+    return "\n".join(lines)
+
+
+# 占位符必须真的被替换掉：.replace() 遇到不存在的 token 是静默 no-op，模板一旦被改名或删除，
+# 带字面 __CHART_TYPES__ 的坏 prompt 就会被直接发给模型、日志里也看不出异常，故 import 时 fail-fast。
+# 本元组与下面链式 .replace 的两个 token 一一对应（守卫脚本静态校验那两处调用）。
+_PLACEHOLDERS = ("__CHART_TYPES__", "__SELECTION_GUIDANCE__")
+# 占位符形状：兜住「模板里的 token 被改名」这种 .replace 同样静默 no-op 的情况
+_PLACEHOLDER_SHAPE = re.compile(r"__[A-Z][A-Z0-9_]*__")
+
+
+def _assert_placeholders_replaced(rendered: str) -> None:
+    """渲染结果里仍残留占位符 → RuntimeError，点名所有残留的 token。"""
+    leftovers = [token for token in _PLACEHOLDERS if token in rendered]
+    leftovers += [t for t in _PLACEHOLDER_SHAPE.findall(rendered) if t not in leftovers]
+    if leftovers:
+        raise RuntimeError(f"SYSTEM_PROMPT 模板占位符未被替换：{leftovers}")
+
+
+_SYSTEM_PROMPT_TEMPLATE = """You are ChartBrain's chart-intent parser. Convert the user's natural-language request into one "neutral chart spec" JSON object.
 Output ONLY a single JSON object. Do not include any explanation, comment, or Markdown code block.
 
 Output JSON shape (field details follow the schema description in the user message):
@@ -25,7 +84,7 @@ Output JSON shape (field details follow the schema description in the user messa
 }
 
 Hard rules:
-1. chart.type must be one of: bar | line | pie | scatter | area | groupedBar | stackedBar | donut | slope | connectedScatter | strip.
+1. chart.type must be one of: __CHART_TYPES__.
 2. Any data processing must be expressed declaratively in transform_plan.steps, using ONLY these
    operators: filter | aggregate | sort | limit | derive | binTime. Use at most 6 steps.
    - filter:    { "op":"filter", "field":"col", "operator":"eq|neq|gt|gte|lt|lte|between|in|contains", "value":..., "values":[...] }
@@ -59,7 +118,18 @@ Hard rules:
 7. NEVER output any chart-library config (Highcharts/ECharts), code, or SQL.
 8. If context constraints.allowed_fields is non-empty, every referenced column must belong to it;
    if constraints.allowed_aggs is non-empty, every agg must belong to it.
+
+Chart type selection (rule 1 lists the allowed types; pick the one that most directly answers
+the question — hints below come from the chart-type catalog):
+__SELECTION_GUIDANCE__
 """
+
+# 规则 1 与选型段都从目录渲染：脚本 scripts/check-chart-types.mjs 静态校验这两处替换接线，
+# 渲染结果（白名单集合、每图型选型行、策略条目、通道保证）由 server/tests/test_prompt.py 断言。
+SYSTEM_PROMPT = _SYSTEM_PROMPT_TEMPLATE.replace(
+    "__CHART_TYPES__", " | ".join(_chart_type_names())
+).replace("__SELECTION_GUIDANCE__", _selection_guidance())
+_assert_placeholders_replaced(SYSTEM_PROMPT)
 
 
 def build_user_prompt(req: ChartRequest) -> str:

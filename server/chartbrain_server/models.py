@@ -43,6 +43,48 @@ class ChartRequest(BaseModel):
         return v
 
 
+class ValidateRequest(BaseModel):
+    """POST /v1/validate 请求体：中性 spec + 可选列元数据（不给则只校验 L1）。"""
+
+    spec: dict[str, Any]
+    columns: list[Column] = Field(default_factory=list, max_length=200)
+    constraints: Constraints | None = None
+
+
+class ValidateResponse(BaseModel):
+    """POST /v1/validate 响应：结构化校验结果（校验结果是 payload，不是 HTTP 错误）。"""
+
+    valid: bool
+    errors: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+
+
+class ChartTypeInfo(BaseModel):
+    """图型目录中的一条记录（specs/chart-types.json 的视图，不在 Python 侧复制数据）。
+
+    漂移提示：新增一个**图型**时 Python 侧（本模型、端点、prompt）不用改一行，改目录即可——
+    但 sdk/specs 侧的四处白名单与 validate.ts 的通道表仍需同步，漏了 scripts/check-chart-types.mjs
+    会点名。新增一个**字段**则要同时改三处：目录、本模型、以及
+    server/tests/test_chart_types_endpoint.py 的响应形状断言
+    （test_chart_types_response_shape_is_stable），因为该守卫只校验目录 ↔ 白名单/通道表，
+    不覆盖响应模型，字段漂移没有守卫兜底。
+    """
+
+    type: str
+    flint: str
+    required_channels: list[str] = Field(default_factory=list)
+    hc_modules: list[str] = Field(default_factory=list)
+    selection: str
+
+
+class ChartTypesResponse(BaseModel):
+    """GET /v1/chart-types 响应：图型目录 + 选型策略（read-only，无 LLM）。"""
+
+    schema_version: int
+    types: list[ChartTypeInfo] = Field(default_factory=list)
+    selection_policy: list[str] = Field(default_factory=list)
+
+
 class ChartResponse(BaseModel):
     """POST /v1/charts 响应（库配置由 SDK 生成，D13）。
 
@@ -53,3 +95,4 @@ class ChartResponse(BaseModel):
     library: Literal["highcharts", "echarts"]
     chart_spec: dict[str, Any]  # 中性 spec（含 transform_plan）
     warnings: list[str] = Field(default_factory=list)
+    repair_rounds: int = 0  # 产出该 spec 经历的修复轮数（0 = 一次通过）

@@ -45,6 +45,7 @@
 | D13 | 转换器执行位置（2026-09 定） | **确定性转换器随 @chartbrain/sdk 以 TS 发布、在消费端本地执行**（与 D12 对称，双库一致）；server 只做 LLM + L1/L2 校验 + 返回 spec/变换计划（无状态、不见数据）；变换、转换、绑定、L3 冒烟等全部确定性步骤在 SDK 完成 |
 | D14 | 能力扩展（2026-09 定，分批） | **P1**：`binTime`（date 按月/季/年分桶）+ `derive`（**二元+常量**四则，复杂公式用两步 derive 链）；**P2**：`percent`（countPercent，分母按 SQL 窗口语义：global/filtered/group/partition[fields]）+ `growth`（环比 mom / 同比 yoy，按 time_field 有序、partition 分区；首期/无前值→**null**，不补 0）。占比/增长率数值一律存 **0~1**，`%` 格式化归消费端/SDK 显示层。表达式与窗口细节见 §4.4 |
 | D15 | Highcharts 后端（2026-09 定，**取代 D11 的「转换器自研」**） | Highcharts 配置不再手写：**vendor flint-js（上游 0.5.1）到 `vendor/flint-chart/`，并在其中新增 `src/highcharts/` 后端**，与 ECharts 后端共用同一套编译器管线（语义 / 布局 / 主题）。理由：上游 `flint-chart/core` 未导出后端所需的内部函数（`applyAggregation` / `decideColorMaps` / `normalizeChartProperties` 等），且 `exports` 无通配符，深路径导入被封装 → vendor 后可 `import '../core/...'` 直接复用。上游**不追踪**（见 `vendor/flint-chart/FORK.md`）；SDK 经 `file:` 依赖消费。v1 覆盖 bar/line/area/scatter/pie，不支持 facet 与 chart-type 变换 |
+| D16 | MCP 交付（远期约束，2026-09-10） | 触发＝图型扩展稳定 + 守卫入 CI；工具面仅 `list_chart_types` / `validate_spec` / `ask_chart`（+ 显式 opt-in 的 `compile_spec`），**一个 schema 不对图型开工具**；可复用知识走 MCP resources（目录 / 契约 / 模块表均为**视图不是副本**）；**服务端永不渲染出图**（D13）。当前锁定为约束记录，不实现；详见 `docs/mcp-delivery-design.md` |
 
 ---
 
@@ -58,7 +59,8 @@
 │                                                            │
 │  API 层                                                     │
 │   ├─ POST /v1/charts         自然语言 → spec + 变换计划      │
-│   └─ POST /v1/validate       （远期）仅校验 spec/变换计划     │
+│   ├─ POST /v1/validate       仅校验 spec/变换计划（无 LLM）  │
+│   └─ GET  /v1/chart-types    图型目录 + 选型策略（无 LLM）   │
 │                                                            │
 │  LLM Provider 抽象层（D4）                                   │
 │   ├─ OpenAI / Claude / DeepSeek / Ollama …                  │
@@ -98,7 +100,7 @@
 1. 消费端收集：`query`（自然语言）+ `library`（`highcharts` / `echarts`）+ `columns`（列 schema + 类型）+ `data_sample`（≤N 行样例，可脱敏）。
 2. 调用 `POST /v1/charts`。
 3. 服务端：组装受控上下文（列 schema 指纹 + 库能力声明 + 少量 NL→spec 范例）→ LLM 结构化输出中性 spec + 变换计划 → L1/L2 校验（L3 冒烟移到 SDK，D13）。
-4. 返回 `{ request_id, chart_spec, transform_plan, warnings }`。
+4. 返回 `{ request_id, library, chart_spec, warnings, repair_rounds }`（`chart_spec` 内含 `transform_plan`；`repair_rounds` = 产出该 spec 经历的修复轮数，0 = 一次通过）。
 5. 消费端 `@chartbrain/sdk`（全部确定性步骤，D13）：执行 `transform_plan`（本地全量数据）→ 确定性转换器产出目标库配置（Highcharts / ECharts 均经 vendored flint-js）→ 数据绑定 →（可选）L3 冒烟 → 交给自己的 Highcharts/ECharts 渲染。
 
 ---
@@ -141,9 +143,11 @@
 | `aggregate` | `group_by[]`, `measures[]`(field + agg + as) | 分组聚合，产出新列 |
 | `sort` | `by`, `order`(asc/desc) | 排序 |
 | `limit` | `n` | 截断行数 |
-| （远期）| `topN` / `bin`(直方图) / `derive`(派生列，需公式校验) / `pivot` | 按需扩展 |
+| （远期）| `topN` / `bin`(直方图) / `pivot` | 按需扩展 |
 
 聚合函数 enum：`sum | avg | count | countDistinct | min | max`（MVP 先做前五个，median 视需要）。
+
+`binTime` / `derive` 已随 P1 落地（见 §4.4，D14），`percent` / `growth` 为 P2 规划；本表只列 MVP 与仍属远期的算子。
 
 ### 4.3 为什么这样设计（调研支撑）
 
@@ -153,7 +157,7 @@
 
 ---
 
-## 4.4 扩展算子草案（D14，P1 实现中 / P2 规划）
+## 4.4 扩展算子（D14，P1 已落地 / P2 规划）
 
 **P1：`derive`（二元+常量，复杂公式用两步链）与 `binTime`**
 
@@ -227,12 +231,55 @@
   "request_id": "cb_…",
   "library": "highcharts",
   "chart_spec": { /* 4.1 的中性 spec */ },
-  "warnings": [ "month 被当作分类轴处理（可指定 date 粒度）" ]
+  "warnings": [ "month 被当作分类轴处理（可指定 date 粒度）" ],
+  "repair_rounds": 0                  // 产出该 spec 经历的修复轮数，0 = 一次通过
 }
 // 消费端 @chartbrain/sdk：执行变换 → 转换（Highcharts / ECharts 均经 vendored flint-js）→ 绑定数据 → 渲染
 
-// 响应 422（校验失败） / 409（歧义，需澄清）
+// 响应 422（校验失败 error_kind=validation / 需澄清 error_kind=clarification；响应体含 error_kind / errors / repair_rounds） / 503（provider 故障）
 ```
+
+### `POST /v1/validate`（已落地）
+
+纯校验：不生成 spec、不调 LLM、无网络，只跑 L1；给了 `columns` 才附加 L2（字段引用命中真实列 + `constraints` 白名单）。
+
+```jsonc
+// 请求：中性 spec + 可选列元数据
+{
+  "spec": { /* 4.1 的中性 spec */ },
+  "columns": [                        // 可选：省略或传 [] → 只跑 L1
+    { "name": "month",   "type": "string" },
+    { "name": "revenue", "type": "number" }
+  ],
+  "constraints": { /* 可选，同 /v1/charts */ }
+}
+
+// 响应 200：spec 层面的任何结论都是 200，校验结果就是 payload
+{
+  "valid": false,
+  "errors": [ "L2: encodings.y: referenced column 'revenu' does not exist (available in current table: ['month', 'revenue'])" ],
+  "warnings": []
+}
+// 不传 columns → { "valid": true, "errors": [], "warnings": [ "L2 skipped: …" ] }：本次只覆盖 L1，valid=true 不蕴含可交付
+// 请求体本身不合法（缺/写错 spec、Column.type 取值非法）→ FastAPI 422，这不是校验结论
+```
+
+### `GET /v1/chart-types`（已落地）
+
+只读 `specs/chart-types.json`（图型目录的单一事实源），直接返回目录视图 + 选型策略；无参数、无 LLM、无网络。
+
+```jsonc
+{
+  "schema_version": 1,
+  "types": [                          // 图型目录视图，不在 Python 侧复制数据
+    { "type": "bar", "flint": "Bar Chart", "required_channels": ["x", "y"],
+      "hc_modules": [], "selection": "…" }
+  ],
+  "selection_policy": [ "…" ]         // 选型规则，与 prompt 的选型段同源（均由目录渲染）
+}
+```
+
+新增图型时 Python 侧不用改一行（改目录即可）；目录与下游白名单/通道表的漂移由 `scripts/check-chart-types.mjs` 以目录为基准对拍。
 
 ### 关于数据与隐私（D8）
 
