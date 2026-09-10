@@ -1,4 +1,4 @@
-"""守卫 prompt 里的白名单副本与 few-shot 示例（L1 schema 为唯一来源）。
+"""守卫 prompt 里的白名单副本、选型说明与 few-shot 示例（L1 schema 为唯一来源）。
 
 白名单散落多处，prompt.py 的副本（SYSTEM_PROMPT 规则 1 的图型列表 + 内嵌在
 few-shot 里的 chart_spec）此前没有任何测试覆盖——漂移只会在真实 LLM 请求里以
@@ -6,21 +6,64 @@ few-shot 里的 chart_spec）此前没有任何测试覆盖——漂移只会在
 specs/chart-spec.schema.json 上：
 1. few-shot 的每个 chart_spec 必须通过现有 L1 校验（validate_spec）；
 2. SYSTEM_PROMPT 规则 1 的图型集合必须与 schema enum 集合相等。
+
+图型选型说明由 specs/chart-types.json（图型目录单一事实源）在 import 时渲染进
+SYSTEM_PROMPT，因此同样需要守卫：目录里每个图型必须有选型行、每个 selection_policy
+条目必须出现在 prompt 里、每个图型的必需通道必须出现——否则新增图型后模型会拿到
+一份「白名单里有、但没说什么时候用」的 prompt。
 """
 
 from __future__ import annotations
 
 import json
 import re
+from pathlib import Path
 
 from chartbrain_server.models import ChartRequest
 from chartbrain_server.spec.prompt import SYSTEM_PROMPT, build_user_prompt
 from chartbrain_server.spec.validator import load_schema, validate_spec
 
+# 目录路径独立于 prompt.py 的加载器：测试必须钉住仓库里的真文件，而不是被测代码的解析结果
+_CATALOG_PATH = Path(__file__).resolve().parents[2] / "specs" / "chart-types.json"
+
+
+def _catalog() -> dict:
+    """specs/chart-types.json（图型目录，单一事实源）。"""
+    return json.loads(_CATALOG_PATH.read_text(encoding="utf-8"))
+
+
+def _catalog_types() -> list[dict]:
+    return _catalog()["types"]
+
 
 def _schema_enum() -> list[str]:
     """chart.type 白名单的唯一来源：specs/chart-spec.schema.json。"""
     return load_schema()["properties"]["chart"]["properties"]["type"]["enum"]
+
+
+def _selection_section() -> str:
+    """SYSTEM_PROMPT 的图型选型段（段首标题之后到 prompt 结尾）。"""
+    m = re.search(r"^Chart type selection.*$", SYSTEM_PROMPT, re.MULTILINE)
+    assert m, "SYSTEM_PROMPT 缺少图型选型段（标题 'Chart type selection'）"
+    return SYSTEM_PROMPT[m.end() :]
+
+
+def _prompt_selection_lines() -> dict[str, str]:
+    """解析选型段里的「图型 — 选型说明」行，返回 {图型: 说明}。"""
+    lines: dict[str, str] = {}
+    for line in _selection_section().splitlines():
+        m = re.match(r"^([A-Za-z][A-Za-z0-9]*) — (.+?)\s*$", line)
+        if m:
+            lines[m.group(1)] = m.group(2)
+    return lines
+
+
+def _channel_groups() -> dict[tuple[str, ...], list[str]]:
+    """按必需通道分组（与 prompt 渲染顺序一致：目录顺序）。"""
+    groups: dict[tuple[str, ...], list[str]] = {}
+    for t in _catalog_types():
+        groups.setdefault(tuple(t["required_channels"]), []).append(t["type"])
+    return groups
 
 
 def _prompt_whitelist() -> set[str]:
@@ -42,7 +85,37 @@ def _few_shot_chart_specs() -> list[dict]:
 
 
 def test_prompt_whitelist_matches_schema_enum() -> None:
-    assert _prompt_whitelist() == set(_schema_enum())
+    whitelist = _prompt_whitelist()
+    assert whitelist == set(_schema_enum())
+    # 目录是单一事实源：规则 1 的列表也必须等于目录类型集合（prompt.py 由此渲染）
+    assert whitelist == {t["type"] for t in _catalog_types()}, "规则 1 与 chart-types.json 漂移"
+
+
+def test_prompt_selection_lines_cover_every_catalog_type() -> None:
+    """目录里每个图型都必须在选型段里有一行，否则模型只看到白名单、看不到何时用。"""
+    assert set(_prompt_selection_lines()) == {t["type"] for t in _catalog_types()}
+
+
+def test_prompt_selection_lines_match_catalog_hints() -> None:
+    """选型行的说明必须逐字来自目录（prompt.py 渲染，不得手改）。"""
+    lines = _prompt_selection_lines()
+    for t in _catalog_types():
+        assert lines.get(t["type"]) == t["selection"], f"{t['type']} 的选型说明与目录不一致"
+
+
+def test_prompt_includes_every_selection_policy_bullet() -> None:
+    for bullet in _catalog()["selection_policy"]:
+        assert f"- {bullet}" in SYSTEM_PROMPT, f"SYSTEM_PROMPT 缺选型策略条目：{bullet}"
+
+
+def test_prompt_keeps_required_channel_guarantee() -> None:
+    """「必需通道填不出来就不要选它」的保证必须留在 prompt 里（目录策略 + 逐图型通道）。"""
+    section = _selection_section()
+    assert _catalog()["selection_policy"][-1] in SYSTEM_PROMPT, "缺「通道填不出来就输出 error」策略"
+    assert "must NOT be chosen" in section, "缺「通道缺失不得选该图型」的英文保证"
+    for channels, types in _channel_groups().items():
+        expected = f"{' + '.join(channels)}: {', '.join(types)}."
+        assert expected in section, f"选型段缺必需通道行：{expected}"
 
 
 def test_every_few_shot_chart_spec_passes_l1() -> None:
