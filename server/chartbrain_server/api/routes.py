@@ -1,5 +1,5 @@
-"""HTTP 路由：/health、POST /v1/charts（M2+：LLM → 中性 spec → L1/L2 → 返回）与
-POST /v1/validate（纯校验，无 LLM）。
+"""HTTP 路由：/health、POST /v1/charts（M2+：LLM → 中性 spec → L1/L2 → 返回）、
+POST /v1/validate（纯校验，无 LLM）与 GET /v1/chart-types（图型目录视图）。
 
 Provider 由配置决定：默认 mock（测试/无 key）；.env 设 CHARTBRAIN_LLM_PROVIDER=openai-compatible
 后走真实 LLM（如 DeepSeek）。
@@ -10,20 +10,34 @@ Provider 由配置决定：默认 mock（测试/无 key）；.env 设 CHARTBRAIN
 
 /v1/validate 例外：它不生成 spec，只校验调用方给的 spec，因此**始终 200**，
 校验结果（valid/errors/warnings）就是响应体。
+
+/v1/chart-types 只读 specs/chart-types.json（单一事实源），与 spec/validator.py 加载
+specs/chart-spec.schema.json 同一套路径解析 + lru_cache；文件缺失时同样直接抛
+FileNotFoundError（→ 500），不静默返回空目录。
 """
 
 from __future__ import annotations
 
+import json
 import logging
 import time
 import uuid
+from functools import lru_cache
+from pathlib import Path
 
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 
 from .. import __version__
+from ..config import settings
 from ..llm import get_provider
-from ..models import ChartRequest, ChartResponse, ValidateRequest, ValidateResponse
+from ..models import (
+    ChartRequest,
+    ChartResponse,
+    ChartTypesResponse,
+    ValidateRequest,
+    ValidateResponse,
+)
 from ..spec.generator import generate_spec
 from ..spec.validate import validate_chart_spec
 
@@ -32,9 +46,26 @@ logger = logging.getLogger("chartbrain.api")
 router = APIRouter()
 
 
+@lru_cache(maxsize=1)
+def load_chart_types() -> dict:
+    """读取仓库根 specs/chart-types.json（与 spec/validator.py::load_schema 同风格）。"""
+    path = Path(settings.effective_specs_dir) / "chart-types.json"
+    with path.open("r", encoding="utf-8") as fh:
+        return json.load(fh)
+
+
 @router.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok", "service": "chartbrain-server", "version": __version__}
+
+
+@router.get("/v1/chart-types", response_model=ChartTypesResponse)
+def chart_types() -> ChartTypesResponse:
+    """图型目录（类型 + 必需通道 + Highcharts 模块 + 选型说明 + 选型策略）。
+
+    纯读 specs/chart-types.json：新增图型只需改那一个文件（不在 Python 侧复制数据）。
+    """
+    return ChartTypesResponse.model_validate(load_chart_types())
 
 
 @router.post("/v1/validate", response_model=ValidateResponse)

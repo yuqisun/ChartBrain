@@ -59,6 +59,24 @@ class ValidateResponse(BaseModel):
     warnings: list[str] = Field(default_factory=list)
 
 
+class ChartTypeInfo(BaseModel):
+    """图型目录中的一条记录（specs/chart-types.json 的视图，不在 Python 侧复制数据）。"""
+
+    type: str
+    flint: str
+    required_channels: list[str] = Field(default_factory=list)
+    hc_modules: list[str] = Field(default_factory=list)
+    selection: str
+
+
+class ChartTypesResponse(BaseModel):
+    """GET /v1/chart-types 响应：图型目录 + 选型策略（read-only，无 LLM）。"""
+
+    schema_version: int
+    types: list[ChartTypeInfo] = Field(default_factory=list)
+    selection_policy: list[str] = Field(default_factory=list)
+
+
 class ChartResponse(BaseModel):
     """POST /v1/charts 响应（库配置由 SDK 生成，D13）。
 
