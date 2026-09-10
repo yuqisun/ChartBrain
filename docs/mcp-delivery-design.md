@@ -89,9 +89,9 @@ flint-mcp 把可复用知识做成 resources：`flint://agent-skill`（`flint-mc
 
 | URI | MIME | 内容 | 唯一权威来源 |
 |---|---|---|---|
-| `chartbrain://chart-types` | `application/json` | 图型目录 + `selection_policy`（= `GET /v1/chart-types` 的同一份视图，`routes.py:62-68`） | `specs/chart-types.json`（`:4-82` 图型、`:83-88` 选型规则） |
+| `chartbrain://chart-types` | `application/json` | 图型目录 + `selection_policy`（= `GET /v1/chart-types` 的同一份视图，`routes.py:62-68`） | `specs/chart-types.json`（`:4-82` 图型、`:83-90` 选型规则） |
 | `chartbrain://spec-schema` | `application/json` | 中性 spec 的 JSON Schema（含 `transform_plan` 算子闭集） | `specs/chart-spec.schema.json`（`:7`、`:16-22`、`:62-70`） |
-| `chartbrain://authoring-rules` | `text/markdown` | 授权规则：列生命周期、能力边界、约束白名单（硬规则 2–8）+ 由目录渲染的选型段 | `server/chartbrain_server/spec/prompt.py` 的 `_SYSTEM_PROMPT_TEMPLATE`（硬规则 2–8）与 `_selection_guidance()`（选型段，由目录渲染）+ `specs/chart-types.json:83-88` |
+| `chartbrain://authoring-rules` | `text/markdown` | 授权规则：列生命周期、能力边界、约束白名单（硬规则 2–8）+ 由目录渲染的选型段 | `server/chartbrain_server/spec/prompt.py` 的 `_SYSTEM_PROMPT_TEMPLATE`（硬规则 2–8）与 `_selection_guidance()`（选型段，由目录渲染）+ `specs/chart-types.json:83-90` |
 | `chartbrain://consumer-contract` | `text/markdown` | 消费端契约：`buildHighcharts` 输出结构、缺通道抛错、重复 (x, series) 不在契约内 | `docs/INTEGRATION.md:152-202` |
 | `chartbrain://highcharts-modules` | `application/json` | 图型 → 需加载的 Highcharts 模块（**数组即加载顺序**） | `docs/INTEGRATION.md:189-198`；`_requiredModules`（规划中，§6.3） |
 
@@ -101,7 +101,7 @@ flint-mcp 把可复用知识做成 resources：`flint://agent-skill`（`flint-mc
 
 ### 3.3 守卫的现状（含一个仍然存在的缺口）
 
-`specs/chart-types.json:2` 声明自己是单一事实源、由 `scripts/check-chart-types.mjs` 强制校验。这句话**现在成立**（`9792fe3` 起）：守卫以目录为基准（`scripts/check-chart-types.mjs:5-11`，`9792fe3`），并对拍目录字段与下游代码——`types[].flint` ↔ 两个转换器的 Flint 名称、`types[].required_channels` ↔ `sdk/src/converter/validate.ts:31-43` 的 `REQUIRED_CHANNELS`、`selection` 与 `selection_policy` 非空（实现见同文件 `check(...)` 调用；工作区正在把 prompt 相关两项从「渲染后文本」改为「接线 + 未硬编码枚举」的纯静态检查，故此处只给符号）。同一批改动还让 `prompt.py` 在 import 时用目录渲染规则 1 与选型段（`load_chart_types()` → `_selection_guidance()` → `_SYSTEM_PROMPT_TEMPLATE.replace(...)`），即**提示词里的图型清单与选型说明已经是目录的视图**，且这条由 `server/tests/test_prompt.py` 断言（选型行逐字等于 `types[].selection`、`selection_policy` 每条都出现）。`GET /v1/chart-types` 是同一份目录的第三个视图（`routes.py:49-68`）。
+`specs/chart-types.json:2` 声明自己是单一事实源、由 `scripts/check-chart-types.mjs` 强制校验。这句话**现在成立**（`9792fe3` 起）：守卫以目录为基准（`scripts/check-chart-types.mjs:5-11`，`9792fe3`），并对拍目录字段与下游代码——`types[].flint` ↔ 两个转换器的 Flint 名称、`types[].required_channels` ↔ `sdk/src/converter/validate.ts:31-43` 的 `REQUIRED_CHANNELS`、`selection` 与 `selection_policy` 非空（实现见同文件 `check(...)` 调用；该文件在本文写作后又经 `90c7ada`（去掉子进程依赖、改回纯静态）与 `288b0cd`（补 4 条目录自不变量，并把第 10 项标签改成如实的「≤16 字符窗口形状检测」）改动，故此处只给符号、不引行号）。同一批改动还让 `prompt.py` 在 import 时用目录渲染规则 1 与选型段（`load_chart_types()` → `_selection_guidance()` → `_SYSTEM_PROMPT_TEMPLATE.replace(...)`），即**提示词里的图型清单与选型说明已经是目录的视图**，且这条由 `server/tests/test_prompt.py` 断言（选型行逐字等于 `types[].selection`、`selection_policy` 每条都出现）。`GET /v1/chart-types` 是同一份目录的第三个视图（`routes.py:49-68`）。
 
 **仍然存在的缺口：`hc_modules` 没有任何机器校验。** 守卫的四类新对拍不含它，`docs/INTEGRATION.md:189-198` 的模块表也没有对拍来源。当前 11 个图型的 `hc_modules` 全是 `[]`（`specs/chart-types.json:9`、`:23` 等），所以问题是隐性的：**B2 引入第一个非空 `hc_modules` 时才会暴露**。MCP 的 `chartbrain://highcharts-modules` 资源会直接消费这个字段，因此这个对拍是 MCP 交付的前置条件（§6.1）。
 
@@ -231,5 +231,5 @@ flint-mcp 把可复用知识做成 resources：`flint://agent-skill`（`flint-mc
 1. **鉴权与 key 归属**：MCP 面是 BYOK 还是托管（D4 未定，`docs/design.md:36`）？REST 侧建议经消费端后端代理（`docs/INTEGRATION.md:25`），MCP 面是否允许 agent 直连 server？
 2. **传输**：flint-mcp 只支持 stdio（`flint-mcp/README.md:146`、`:151`），我们是否需要 HTTP/SSE？两者对鉴权与审计的要求不同。
 3. **多轮改图**：`ask_chart` 是否接受上一轮的 spec 作为输入（「把柱状图换成折线」）？当前是「一次一问一图」，多轮会话仍在路线图前瞻（`docs/design.md:312` 第 5 条、`docs/INTEGRATION.md:150`）。
-4. **`ask_chart` 是否返回候选**：选型本身可争议（`specs/chart-types.json:83-88` 的 `selection_policy` 给的是规则而非唯一解）；是否返回 `{candidates: [...]}` 让 agent 选？调研侧先例是 NL4DV 的候选列表与 Highcharts Chartchooser 的独立选型（`research/nl-to-chart-spec-survey.md:89`），但这会改变「单轮修复」的语义。
+4. **`ask_chart` 是否返回候选**：选型本身可争议（`specs/chart-types.json:83-90` 的 `selection_policy` 给的是规则而非唯一解）；是否返回 `{candidates: [...]}` 让 agent 选？调研侧先例是 NL4DV 的候选列表与 Highcharts Chartchooser 的独立选型（`research/nl-to-chart-spec-survey.md:89`），但这会改变「单轮修复」的语义。
 5. **`constraints` 怎么暴露**：`allowed_fields` / `allowed_aggs` / `max_transform_rows` 现在是请求字段（`models.py:17-22`，由 L2 在 `l2.py:67-70`、`:117-121` 强制执行）。MCP 面把它作为工具参数、还是作为部署期配置（资源）？后者更安全但不够灵活——注意 `POST /v1/validate` 已支持把 `constraints` 作为独立入参传入（`models.py:46-51`），因此「工具参数」这条路是通的。
