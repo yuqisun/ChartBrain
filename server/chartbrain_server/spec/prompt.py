@@ -14,6 +14,7 @@ specs/chart-types.json（单一事实源）在 import 时渲染，改目录即�
 from __future__ import annotations
 
 import json
+import re
 from functools import lru_cache
 from pathlib import Path
 
@@ -53,6 +54,22 @@ def _selection_guidance() -> str:
         groups.setdefault(tuple(t["required_channels"]), []).append(t["type"])
     lines += [f"{' + '.join(chs)}: {', '.join(types)}." for chs, types in groups.items()]
     return "\n".join(lines)
+
+
+# 占位符必须真的被替换掉：.replace() 遇到不存在的 token 是静默 no-op，模板一旦被改名或删除，
+# 带字面 __CHART_TYPES__ 的坏 prompt 就会被直接发给模型、日志里也看不出异常，故 import 时 fail-fast。
+# 本元组与下面链式 .replace 的两个 token 一一对应（守卫脚本静态校验那两处调用）。
+_PLACEHOLDERS = ("__CHART_TYPES__", "__SELECTION_GUIDANCE__")
+# 占位符形状：兜住「模板里的 token 被改名」这种 .replace 同样静默 no-op 的情况
+_PLACEHOLDER_SHAPE = re.compile(r"__[A-Z][A-Z0-9_]*__")
+
+
+def _assert_placeholders_replaced(rendered: str) -> None:
+    """渲染结果里仍残留占位符 → RuntimeError，点名所有残留的 token。"""
+    leftovers = [token for token in _PLACEHOLDERS if token in rendered]
+    leftovers += [t for t in _PLACEHOLDER_SHAPE.findall(rendered) if t not in leftovers]
+    if leftovers:
+        raise RuntimeError(f"SYSTEM_PROMPT 模板占位符未被替换：{leftovers}")
 
 
 _SYSTEM_PROMPT_TEMPLATE = """You are ChartBrain's chart-intent parser. Convert the user's natural-language request into one "neutral chart spec" JSON object.
@@ -112,6 +129,7 @@ __SELECTION_GUIDANCE__
 SYSTEM_PROMPT = _SYSTEM_PROMPT_TEMPLATE.replace(
     "__CHART_TYPES__", " | ".join(_chart_type_names())
 ).replace("__SELECTION_GUIDANCE__", _selection_guidance())
+_assert_placeholders_replaced(SYSTEM_PROMPT)
 
 
 def build_user_prompt(req: ChartRequest) -> str:

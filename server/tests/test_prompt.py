@@ -19,8 +19,16 @@ import json
 import re
 from pathlib import Path
 
+import pytest
+
 from chartbrain_server.models import ChartRequest
-from chartbrain_server.spec.prompt import SYSTEM_PROMPT, build_user_prompt
+from chartbrain_server.spec import prompt as prompt_module
+from chartbrain_server.spec.prompt import (
+    SYSTEM_PROMPT,
+    _PLACEHOLDERS,
+    _assert_placeholders_replaced,
+    build_user_prompt,
+)
 from chartbrain_server.spec.validator import load_schema, validate_spec
 
 # 目录路径独立于 prompt.py 的加载器：测试必须钉住仓库里的真文件，而不是被测代码的解析结果
@@ -116,6 +124,45 @@ def test_prompt_keeps_required_channel_guarantee() -> None:
     for channels, types in _channel_groups().items():
         expected = f"{' + '.join(channels)}: {', '.join(types)}."
         assert expected in section, f"选型段缺必需通道行：{expected}"
+
+
+def test_placeholder_rail_raises_when_a_placeholder_survives() -> None:
+    """模板缺了/改了占位符时必须 fail-fast：.replace() 对不存在的 token 是静默 no-op，
+    否则会把字面 __CHART_TYPES__ 的坏 prompt 直接发给模型且日志里看不出异常。"""
+    with pytest.raises(RuntimeError) as excinfo:
+        _assert_placeholders_replaced("1. chart.type must be one of: __CHART_TYPES__.")
+    message = str(excinfo.value)
+    assert "__CHART_TYPES__" in message, f"报错没点名残留占位符：{message}"
+    assert "__SELECTION_GUIDANCE__" not in message, f"报错点名了未残留的占位符：{message}"
+
+
+def test_placeholder_rail_raises_naming_every_survivor() -> None:
+    with pytest.raises(RuntimeError) as excinfo:
+        _assert_placeholders_replaced("__CHART_TYPES__ 和 __SELECTION_GUIDANCE__ 都还在")
+    assert str(excinfo.value) == (
+        f"SYSTEM_PROMPT 模板占位符未被替换：{list(_PLACEHOLDERS)}"
+    ), "残留占位符必须全部点名（顺序与 _PLACEHOLDERS 一致）"
+
+
+def test_placeholder_rail_also_catches_a_renamed_template_token() -> None:
+    """模板里的 token 被改名时 .replace 同样静默 no-op，残留的 __…__ 也必须被点名。"""
+    with pytest.raises(RuntimeError) as excinfo:
+        _assert_placeholders_replaced("1. chart.type must be one of: __CHART_TYPEZ__.")
+    assert "__CHART_TYPEZ__" in str(excinfo.value), f"报错没点名残留 token：{excinfo.value}"
+
+
+def test_placeholder_rail_passes_for_the_real_prompt() -> None:
+    assert not [token for token in _PLACEHOLDERS if token in SYSTEM_PROMPT]
+    _assert_placeholders_replaced(SYSTEM_PROMPT)  # 不抛即通过
+
+
+def test_placeholder_tuple_matches_replace_chain() -> None:
+    """_PLACEHOLDERS 必须与模块体里链式 .replace 的 token 一致，否则断言自身会漂移。"""
+    source = Path(prompt_module.__file__).read_text(encoding="utf-8")
+    chain_tokens = re.findall(r'\.replace\(\s*"(__[A-Z_]+__)"', source)
+    assert set(chain_tokens) == set(_PLACEHOLDERS), (
+        f"链上 token {chain_tokens} 与 _PLACEHOLDERS {list(_PLACEHOLDERS)} 不一致"
+    )
 
 
 def test_every_few_shot_chart_spec_passes_l1() -> None:
