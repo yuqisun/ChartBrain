@@ -60,7 +60,15 @@ class ValidateResponse(BaseModel):
 
 
 class ChartTypeInfo(BaseModel):
-    """图型目录中的一条记录（specs/chart-types.json 的视图，不在 Python 侧复制数据）。"""
+    """图型目录中的一条记录（specs/chart-types.json 的视图，不在 Python 侧复制数据）。
+
+    漂移提示：新增一个**图型**时 Python 侧（本模型、端点、prompt）不用改一行，改目录即可——
+    但 sdk/specs 侧的四处白名单与 validate.ts 的通道表仍需同步，漏了 scripts/check-chart-types.mjs
+    会点名。新增一个**字段**则要同时改三处：目录、本模型、以及
+    server/tests/test_chart_types_endpoint.py 的响应形状断言
+    （test_chart_types_response_shape_is_stable），因为该守卫只校验目录 ↔ 白名单/通道表，
+    不覆盖响应模型，字段漂移没有守卫兜底。
+    """
 
     type: str
     flint: str

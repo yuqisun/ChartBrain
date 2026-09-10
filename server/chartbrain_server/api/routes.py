@@ -8,8 +8,9 @@ Provider 由配置决定：默认 mock（测试/无 key）；.env 设 CHARTBRAIN
 - provider 故障（网络/认证/超时）→ 503
 - 需要澄清 / L1/L2 校验失败 → 422（携带 error_kind 与结构化 errors）
 
-/v1/validate 例外：它不生成 spec，只校验调用方给的 spec，因此**始终 200**，
-校验结果（valid/errors/warnings）就是响应体。
+/v1/validate 例外：它不生成 spec，只校验调用方给的 spec，因此 **spec 层面的判定始终 200**，
+校验结果（valid/errors/warnings）就是响应体；「请求体本身不合法」（缺/写错 spec、Column.type
+取值非法）仍由 FastAPI 直接返回 422，不走这里。
 
 /v1/chart-types 只读 specs/chart-types.json（单一事实源），与 spec/validator.py 加载
 specs/chart-spec.schema.json 同一套路径解析 + lru_cache；文件缺失时同样直接抛
@@ -63,14 +64,20 @@ def health() -> dict[str, str]:
 def chart_types() -> ChartTypesResponse:
     """图型目录（类型 + 必需通道 + Highcharts 模块 + 选型说明 + 选型策略）。
 
-    纯读 specs/chart-types.json：新增图型只需改那一个文件（不在 Python 侧复制数据）。
+    纯读 specs/chart-types.json：新增图型时 Python 侧不用改一行（不在 Python 侧复制数据）。
+    但新增字段不止一处：目录 + models.ChartTypeInfo + server/tests/test_chart_types_endpoint.py
+    的响应形状断言（scripts/check-chart-types.mjs 不校验响应模型）。
     """
     return ChartTypesResponse.model_validate(load_chart_types())
 
 
 @router.post("/v1/validate", response_model=ValidateResponse)
 def validate(req: ValidateRequest) -> ValidateResponse:
-    """校验调用方给的中性 spec（L1 + 可选 L2）：确定性、无 LLM、无网络，始终 200。"""
+    """校验调用方给的中性 spec（L1 + 可选 L2）：确定性、无 LLM、无网络。
+
+    spec 层面的判定（含「spec 不合法」）始终 200，结果在响应体里；请求体本身不合法
+    （缺/写错 spec、Column.type 取值非法）仍是 FastAPI 的 422。
+    """
     result = validate_chart_spec(req.spec, req.columns, req.constraints)
     logger.info(
         "validate.done valid=%s errors=%d warnings=%d columns=%d",

@@ -35,9 +35,18 @@ def test_chart_types_every_entry_has_channels_and_selection() -> None:
     assert body["types"], "catalog must not be empty"
     for entry in body["types"]:
         assert entry["required_channels"], f"{entry['type']}: required_channels is empty"
+        assert all(
+            isinstance(ch, str) and ch for ch in entry["required_channels"]
+        ), f"{entry['type']}: required_channels 必须是字符串列表，实际 {entry['required_channels']!r}"
         assert entry["selection"], f"{entry['type']}: selection is empty"
         assert entry["flint"], f"{entry['type']}: flint is empty"
-        assert isinstance(entry["hc_modules"], list)
+        # 光断言 isinstance(list) 会放过 [1, 2, 3]：这里钉到「字符串列表」（可以为空，
+        # bar/line 等本就无需额外 Highcharts 模块）
+        modules = entry["hc_modules"]
+        assert isinstance(modules, list), f"{entry['type']}: hc_modules 必须是列表"
+        assert all(
+            isinstance(m, str) and m for m in modules
+        ), f"{entry['type']}: hc_modules 必须是字符串列表，实际 {modules!r}"
 
 
 def test_chart_types_includes_selection_policy() -> None:

@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 
 from chartbrain_server.main import app
 from chartbrain_server.models import Column
-from chartbrain_server.spec.validate import validate_chart_spec
+from chartbrain_server.spec.validate import L2_SKIPPED_WARNING, validate_chart_spec
 
 client = TestClient(app)
 
@@ -71,7 +71,8 @@ def test_validate_chart_spec_unit_warns_when_columns_omitted() -> None:
     result = validate_chart_spec(_MINI_SPEC)
     assert result.valid is True
     assert result.errors == []
-    assert result.warnings and any("L2" in w for w in result.warnings)
+    # 钉住确切文案（不是「含 L2 的随便什么警告」）：调用方靠这句话知道结果只覆盖了 L1
+    assert result.warnings == [L2_SKIPPED_WARNING]
 
 
 # ---------- B2：POST /v1/validate ----------
@@ -144,7 +145,7 @@ def test_validate_endpoint_without_columns_runs_l1_only_and_warns() -> None:
     body = resp.json()
     assert body["valid"] is True
     assert body["errors"] == []
-    assert body["warnings"] and any("L2" in w for w in body["warnings"])
+    assert body["warnings"] == [L2_SKIPPED_WARNING]
 
 
 def test_validate_endpoint_empty_columns_behaves_like_omitted() -> None:
@@ -152,7 +153,7 @@ def test_validate_endpoint_empty_columns_behaves_like_omitted() -> None:
     assert resp.status_code == 200
     body = resp.json()
     assert body["valid"] is True
-    assert body["warnings"] and any("L2" in w for w in body["warnings"])
+    assert body["warnings"] == [L2_SKIPPED_WARNING]
 
 
 def test_validate_endpoint_without_columns_still_reports_l1() -> None:
@@ -161,7 +162,7 @@ def test_validate_endpoint_without_columns_still_reports_l1() -> None:
     body = resp.json()
     assert body["valid"] is False
     assert any("bar3d" in e for e in body["errors"])
-    assert body["warnings"]
+    assert body["warnings"] == [L2_SKIPPED_WARNING]
 
 
 def test_validate_endpoint_never_returns_422_for_invalid_spec() -> None:
