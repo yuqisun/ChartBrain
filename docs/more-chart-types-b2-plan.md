@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 让 `lollipop / waterfall / funnel / pyramid / gauge / streamgraph / boxplot / rose / radar` 九个图型在 Highcharts 与 ECharts 两端都可用、行为一致，并打通「模块声明机制 → HC 模板 → 契约白名单 → SDK 映射 → 双端差分验收」整条链路。ECharts 端这 9 个模板**上游已全部存在**（已逐一核实其 `chart` 名与 series 结构），本批的模板工作全部在 Highcharts 端。
+**Goal:** 让 `lollipop / waterfall / funnel / pyramid / gauge / streamgraph / boxplot / rose / radar` 九个图型在 Highcharts 与 ECharts 两端都可用、行为一致，并打通「模块声明机制 → HC 模板 → 契约同步（图型目录驱动）→ SDK 映射 → 双端差分验收」整条链路。ECharts 端这 9 个模板**上游已全部存在**（已逐一核实其 `chart` 名与 series 结构），本批的模板工作全部在 Highcharts 端。
 
-**Architecture:** 每个图型 = ① HC 端新增模板（镜像既有 EC 模板的数值/排序/配色语义，复用 core 语义/布局管线）② HC 注册 ③ 契约白名单 5 处（schema / `ChartType` union / 两个转换器映射 / prompt 规则 1）+ `REQUIRED_CHANNELS` 通道校验器 + `check-chart-types.mjs` 守卫脚本 ④ 双端差分验收（扩展 `scripts/chart-parity.mjs`，逐类型断言）。新增一个**模块声明机制**：HC 后端按图型名登记所需 Highcharts 模块并以 `_requiredModules` 附在输出 options 上（库本身不 import 任何 HC 运行时，缺模块不会让编译期崩溃）。
+**Architecture:** 每个图型 = ① HC 端新增模板（镜像既有 EC 模板的数值/排序/配色语义，复用 core 语义/布局管线）② HC 注册 ③ 契约同步（**目录驱动**）：`specs/chart-types.json` 图型目录追加 9 条（单一事实源，每条含 `type` / `flint` / `required_channels` / `hc_modules` / `selection`）+ **四处手写代码副本**（`specs/chart-spec.schema.json` 的 `chart.type` enum、`sdk/src/types.ts` 的 `ChartType` union、`highcharts.ts` 与 `echarts.ts` 的 `FLINT_CHART_TYPE`）+ `REQUIRED_CHANNELS` 通道校验器（prompt 规则 1 白名单与选型段由目录在 import 时渲染，**无需手改**）+ `check-chart-types.mjs` 守卫脚本 ④ 双端差分验收（扩展 `scripts/chart-parity.mjs`，逐类型断言）。新增一个**模块声明机制**：HC 后端按图型名登记所需 Highcharts 模块并以 `_requiredModules` 附在输出 options 上（库本身不 import 任何 HC 运行时，缺模块不会让编译期崩溃）。
 
 **Tech Stack:** TypeScript · vendored flint-js 0.5.1 · Highcharts 12.6.0（核心 8 种 series；`highcharts-more.js` 提供 boxplot/gauge/waterfall/polar；`modules/funnel.js` 提供 funnel；`modules/streamgraph.js` 提供 streamgraph）· ECharts 5 · vitest 4（真实运行）/ tsc + Node（沙箱内验证）
 
@@ -14,7 +14,7 @@
 
 ## 关键约束（务必先读）
 
-1. **只允许修改下列文件**：`vendor/flint-chart/packages/flint-js` 下的 HC 模板/注册/模块表/测试、`scripts/chart-parity.mjs`、五处契约（schema / prompt / SDK types / 两个 adapter）、`sdk/src/converter/validate.ts`、`sdk/tests`（converter/validate 用例）、`examples/dual-demo/offline.mjs`、`docs/INTEGRATION.md`。`scripts/check-chart-types.mjs` 只运行不修改。**不得修改** EC 端任何 src（上游模板已齐备）与 shared core。
+1. **只允许修改下列文件**：`vendor/flint-chart/packages/flint-js` 下的 HC 模板/注册/模块表/测试、`scripts/chart-parity.mjs`、契约同步（`specs/chart-types.json` 图型目录 + 四处代码副本：schema / SDK types / 两个 adapter）、`sdk/src/converter/validate.ts`、`sdk/tests`（converter/validate 用例）、`examples/dual-demo/offline.mjs`、`docs/INTEGRATION.md`。`scripts/check-chart-types.mjs` 只运行不修改。**不得修改** EC 端任何 src（上游模板已齐备）与 shared core。
 2. **ECharts 模板名即契约**：`Lollipop Chart / Waterfall Chart / Funnel Chart / Pyramid Chart / Gauge Chart / Streamgraph / Boxplot / Rose Chart / Radar Chart`（注意 `Boxplot`、`Streamgraph` 无 "Chart" 后缀，来自 `src/echarts/templates/*.ts` 的 `chart:` 字段；HC 注册必须使用完全相同的字符串，否则双端收不到同一个 chartType）。
 3. **中性 spec 不加后端通道**：schema 只允许 `x/y/series`（`additionalProperties: false`）。funnel（x=阶段→Flint `y`、y=数值→Flint `size`）与 gauge（y→Flint `size`）的语义借用只发生在 SDK adapter 内，与 B1 的 pie/donut 例外同构。
 4. **模板不 import Highcharts 运行时**：HC 后端只产 options 对象；模块由消费端按 `_requiredModules` / INTEGRATION 表加载。库侧「缺模块不崩溃」= 编译/装配阶段完全不触碰 HC 运行时。
@@ -22,10 +22,20 @@
 6. **沙箱不能跑 npm / vitest / 浏览器**（esbuild 子进程管道 `spawn EPERM`）。权威测试由**用户**执行；沙箱内只跑下方「验证命令速查」中的命令。
 7. **tsc 一律 `--noEmit` 或显式 `--outDir` 到沙箱目录**：不带 `--outDir` 的 emit 会写坏 vendor `dist/`（B1 已踩过坑，破坏了 SDK typecheck）。
 8. **产出物双端对齐**：新增 HC 模板的 `channels` 与对应 EC 模板一致，仅去掉 facet 通道 `column/row`（HC v1 无 facet，见 FORK.md 范围）；EC 声明但从不读取的通道（如 boxplot 的 `opacity`）也照单保留，保证两端的通道表可逐项对照。
+9. **契约同步模型 = 目录（1 处基准）+ 四处代码副本 + 通道表；prompt 自动渲染**：`specs/chart-types.json` 是「哪些 `chart.type` 合法、每个图型要哪些通道、要哪些 HC 模块、什么时候该选它」的唯一权威定义。新增图型时手写的只有：
+   - ① `specs/chart-types.json`（基准，先改这里）；
+   - ② `specs/chart-spec.schema.json` 的 `chart.type` enum；
+   - ③ `sdk/src/types.ts` 的 `ChartType` union；
+   - ④ `sdk/src/converter/highcharts.ts` 的 `FLINT_CHART_TYPE`；
+   - ⑤ `sdk/src/converter/echarts.ts` 的 `FLINT_CHART_TYPE`；
+   - ⑥ `sdk/src/converter/validate.ts` 的 `REQUIRED_CHANNELS`（必须逐项等于目录的 `required_channels`，守卫会查）。
+   `server/chartbrain_server/spec/prompt.py` **不在其中**：其规则 1 白名单与「Chart type selection」选型段都由目录在 import 时渲染（`__CHART_TYPES__` / `__SELECTION_GUIDANCE__` 占位符 + 链式 `.replace(...)` + 占位符残留 fail-fast），改目录即改 prompt，**不存在「改完代码还要记得同步 prompt 白名单」这一步**。渲染结果由 `server/tests/test_prompt.py` 断言（规则 1 == 目录类型集合 == schema enum、每图型选型行逐字来自目录、`selection_policy` 条目齐全、必需通道保证）。prompt 侧 B2 只剩 few-shot（Task 9）。
+10. **守卫 `scripts/check-chart-types.mjs` 的含义（HEAD `b392f54` 实测，纯静态、无 Python 子进程）**：以目录为基准（来源 1/5），另比对 **4 处静态来源**（schema enum、`ChartType` union、两个 `FLINT_CHART_TYPE` 映射）；`prompt.py` 规则 1 **故意不列为来源**，脚本会打印一行说明「规则 1 由目录生成，渲染结果由 pytest 断言」。退出码：**0 全绿 / 1 不一致 / 2 读取或解析失败**（环境问题）。除集合一致外还校验：`types[].flint` == 两个适配器的 Flint 名称、`types[].required_channels` == `validate.ts` 的 `REQUIRED_CHANNELS`、`selection` 与 `selection_policy` 非空、prompt.py 仍是「目录渲染」接线（占位符 + `.replace` 调用 + 从 `load_chart_types()` 取数），外加目录自身不变量 `types[].type` 唯一 / `schema_version` 为 ≥1 的整数 / `types[].flint` 非空 / `required_channels` 取值 ∈ {x,y,series}。检查 10 是**启发式**（≤16 字符窗口内相邻的两个目录图型名即判为枚举）：它只说明「没检出同段相邻枚举这一形状」，**不**证明「prompt.py 里没有手写枚举」，「渲染出来的文本正确」归 pytest。
+11. **`hc_modules` 没有机器校验（已知缺口，必须靠人读对齐）**：目录的 `hc_modules` 字段（该图型渲染前要加载的 Highcharts 模块）**不被守卫、也不被任何测试校验**——守卫只查 `type` 集合、`flint`、`required_channels`、`selection`，与 `hc_modules` 无关。因此 Task 8 填这一列时必须照着本计划 Task 0 Step 1 的模块登记表（`HC_CHART_MODULES`）/ Task 10 的 INTEGRATION 对照表**逐字抄写**，不能指望守卫报错提醒；填错只会在消费端加载时以「模块缺失」的形式炸掉。它与 vendor 侧 `_requiredModules` 的一致性靠人工核对。
 
 ## 验证环境（务必先读）
 
-本机沙箱**无法运行 npm 生命周期脚本与 vitest 本体**（报 `spawn EPERM`）。计划中的验证分两类；下文全部命令在 HEAD `73cdd65` 实测通过（基线见表格末行）。
+本机沙箱**无法运行 npm 生命周期脚本与 vitest 本体**（报 `spawn EPERM`）。计划中的验证分两类；下文全部命令在 HEAD `b392f54` 复核（V6/V7 为本 HEAD 实测；vendor/SDK/parity 三项是该批之前实测、本分支未触及，基线见表格末行）。
 
 | 用途 | 命令 | 基线（HEAD 实测） |
 |---|---|---|
@@ -34,8 +44,8 @@
 | 双端差分（对 `.tmp-build`） | V3 | 11 passed / 0 failed（B2 目标 20） |
 | SDK 类型检查 | V4 | exit 0 |
 | vendor 单元测试 shim | V5 | `files=56 passed=1122 failed=0` + ✅ |
-| server 测试 | V6 | 37 passed |
-| 白名单五处一致 | V7 | ✅ 5 处白名单一致（11 种）（B2 目标 20 种） |
+| server 测试 | V6 | 66 passed（复核期间同期改动给 `server/tests/test_prompt.py` 加了 4 条断言 → 70 passed；B2 不新增 server 测试函数，跑前以实测数为准） |
+| 图型目录一致性守卫 | V7 | `✅ 目录与 5 处静态来源一致（11 种）；渲染后的 prompt 由 server/tests/test_prompt.py 断言`（B2 目标 20 种） |
 | SDK 单测 shim | V8 | 44 passed, 0 failed（exit 0） |
 | 对比页静态渲染 | V9 | 11/11 用例 ok、0 external CDN refs |
 | **权威测试** | `cd vendor/flint-chart/packages/flint-js && npm run build && npm test`；`cd sdk && npm run typecheck && npm test`；`cd server && .\.venv\Scripts\python -m pytest -q` | **用户**（Task 8/11 的用户步骤统一执行；沙箱内各 Task 只跑 V1–V9） |
@@ -75,10 +85,15 @@ node --import file:///D:/work/aichart/.verify/preload-vega.mjs D:\work\aichart\.
 #     "Unsupported Excel chart type: funnel"，使 node 退出码为 1）——以 failed=0 / ✅ 行为绿；
 #     权威判定见用户 npm test。
 
-# V6: server 测试（期望：37 passed）
+# V6: server 测试（期望：66 passed；同期 test_prompt.py 的 +4 断言已落地时为 70 passed。
+#      B2 不新增 server 测试函数，故期望值不因本批变化）
 $env:PYTHONPATH='<repo>\server'; python -m pytest <repo>\server\tests -q -p no:cacheprovider
 
-# V7: 白名单五处一致（schema / ChartType union / 两个 FLINT_CHART_TYPE / prompt 规则 1；
+# V7: 图型目录一致性守卫（基准 = specs/chart-types.json；另比对 4 处静态来源：
+#      chart-spec.schema.json 的 chart.type enum / types.ts 的 ChartType union /
+#      highcharts.ts 与 echarts.ts 的 FLINT_CHART_TYPE 键，共 5 处；
+#      prompt.py 规则 1 不列为来源——它由目录渲染，渲染结果由 pytest 断言，脚本会打印该说明。
+#      纯静态、无 Python 子进程；退出码 0 全绿 / 1 不一致 / 2 读取或解析失败。
 #      B2 基线 11 种 → 目标 20 种）
 node scripts\check-chart-types.mjs
 
@@ -97,7 +112,7 @@ node D:\work\aichart\.verify\check-html-options.cjs
 # 期望：Highcharts.chart 11 次 / echarts 11 次全部 ok、external CDN refs: 0、✅ every case renders
 ```
 
-> **基线（HEAD `73cdd65` 实测）**：vendor 类型检查 exit 0；vendor shim `files=56 passed=1122`；server `37 passed`；SDK shim `44 passed, 0 failed`；parity `11 passed, 0 failed`；白名单 `✅ 5 处白名单一致（11 种）`；V9 `11/11 ok、0 external refs`。
+> **基线（HEAD `b392f54`；V6/V7 为本 HEAD 实测，vendor/SDK/parity 三项为该批之前实测、本分支未触及）**：vendor 类型检查 exit 0；vendor shim `files=56 passed=1122`；server `66 passed`（复核期间同期改动 +4 → `70 passed`）；SDK shim `44 passed, 0 failed`；parity `11 passed, 0 failed`；守卫 `✅ 目录与 5 处静态来源一致（11 种）；渲染后的 prompt 由 server/tests/test_prompt.py 断言`（`✓` 共 10 条，见 Task 8 Step 8）；V9 `11/11 ok、0 external refs`。
 > 权威测试由**用户**在批次验收（Task 11）统一执行；每个图型 Task 末尾的「请用户跑权威测试」同样由用户执行。
 
 所有路径以 `<repo>` 为基准；下文不再重复前缀。
@@ -123,6 +138,7 @@ node D:\work\aichart\.verify\check-html-options.cjs
 | `<vendor>/src/highcharts/templates/rose.ts` | 新建 | HC Rose（原生 `variablepie`，等角 + z=原始值） |
 | `<vendor>/tests/highcharts.test.ts` | 改 | 9 个图型的用例 + 模块登记表用例 + 「未知图型」样例改名 |
 | `scripts/chart-parity.mjs` | 改 | `generic:false` 支持 + B2 夹具 + 9 个逐类型用例（含自定义 `check(hc, ec)`） |
+| `specs/chart-types.json` | 改 | 图型目录（单一事实源）：追加 9 条 `type` / `flint` / `required_channels` / `hc_modules` / `selection`；schema enum、`ChartType`、两个 `FLINT_CHART_TYPE`、`REQUIRED_CHANNELS` 都以它为准 |
 | `specs/chart-spec.schema.json` | 改 | `chart.type` enum 加 9 个值 |
 | `sdk/src/types.ts` | 改 | `ChartType` union 扩 9 |
 | `sdk/src/converter/highcharts.ts` | 改 | FLINT 名映射 + funnel/gauge 通道例外 + `HighchartsOption._requiredModules` 类型 |
@@ -130,8 +146,8 @@ node D:\work\aichart\.verify\check-html-options.cjs
 | `sdk/src/converter/validate.ts` | 改 | `REQUIRED_CHANNELS` 补 9 个新图型（gauge 仅 `y`，其余 `x`+`y`，`series` 一律可选） |
 | `sdk/tests/converter.test.ts` | 改 | 白名单形状表扩 9 + funnel/gauge 语义用例 |
 | `sdk/tests/validate.test.ts` | 改 | 20 种必需通道用例（含 gauge 仅 y / 缺通道抛错点名） |
-| `scripts/check-chart-types.mjs` | 跑（不改） | 白名单五处一致性守卫（Task 8/9 后应输出 `20 种`） |
-| `server/chartbrain_server/spec/prompt.py` | 改 | 白名单行 + 9 条 few-shot |
+| `scripts/check-chart-types.mjs` | 跑（不改） | 目录一致性守卫：目录为基准 + 4 处静态来源（schema enum / `ChartType` / 两个 `FLINT_CHART_TYPE`）+ 目录不变量（Task 8 完成后应输出 `20 种`） |
+| `server/chartbrain_server/spec/prompt.py` | 改 | 只加 9 条 few-shot（规则 1 白名单与选型段由目录渲染，不改） |
 | `examples/dual-demo/offline.mjs` | 改 | 9 个对比用例 + 模块 script 标签 |
 | `docs/INTEGRATION.md` | 改 | 模块对照表修订 + `_requiredModules` 输出契约 + 图型 FAQ |
 
@@ -2157,13 +2173,18 @@ git commit -m "feat(highcharts): Radar（polar line）与 Rose（原生 variable
 
 ---
 
-### Task 8: 契约白名单（5 处 + 守卫脚本）+ 通道校验器 + SDK 用例
+### Task 8: 图型目录条目（9 条）+ 四处代码副本 + 通道校验器 + SDK 用例
 
-> B1 之后新增了两件契约基建，本 Task 必须一并同步，否则新图型会「校验漏过或误抛」或「白名单五处漂移」：
-> - `sdk/src/converter/validate.ts`（`REQUIRED_CHANNELS` + `validateChannels`，`toHighcharts`/`toECharts` 在进入后端前调用）；
-> - `scripts/check-chart-types.mjs`（schema enum / `ChartType` union / 两个 `FLINT_CHART_TYPE` / prompt 规则 1 五处一致性守卫）。
+> 契约同步现在是**目录驱动**的：`specs/chart-types.json`（单一事实源）是基准，本 Task 要动的手写副本只有**四处代码 + 一张通道表**，外加目录本身：
+> - Modify `specs/chart-types.json`：追加 9 条（`type` / `flint` / `required_channels` / `hc_modules` / `selection`），其余各处都向它看齐；
+> - 四处代码副本：`specs/chart-spec.schema.json` 的 `chart.type` enum、`sdk/src/types.ts` 的 `ChartType` union、`sdk/src/converter/highcharts.ts` 与 `echarts.ts` 的 `FLINT_CHART_TYPE`；
+> - `sdk/src/converter/validate.ts`：`REQUIRED_CHANNELS` + `validateChannels`（`toHighcharts`/`toECharts` 在进入后端前调用），其内容必须**逐项等于目录的 `required_channels`**（守卫会查）；
+> - `scripts/check-chart-types.mjs` **只运行不修改**：以目录为基准（来源 1/5），比对上面 4 处静态来源，并校验目录自身不变量（`types[].flint` == 两个适配器的 Flint 名称、`required_channels` == `REQUIRED_CHANNELS`、`selection`/`selection_policy` 非空）；`prompt.py` 规则 1 故意不列为来源——它由目录渲染，脚本会打印这一说明，渲染结果由 pytest 断言。
+>
+> **本 Task 不编辑 `server/chartbrain_server/spec/prompt.py`**：规则 1 的白名单与「Chart type selection」选型段都在 import 时由目录渲染（`__CHART_TYPES__` / `__SELECTION_GUIDANCE__` 占位符 + 链式 `.replace(...)` + 占位符残留 fail-fast），目录一改 prompt 即改，**不存在「prompt.py 白名单滞后」这一步**，因此本 Task 结束时 V7 就应当是**绿的（20 种）**。prompt 侧剩下的只有 few-shot（Task 9）。
 
 **Files:**
+- Modify: `specs/chart-types.json`
 - Modify: `specs/chart-spec.schema.json`
 - Modify: `sdk/src/types.ts`
 - Modify: `sdk/src/converter/highcharts.ts`
@@ -2172,7 +2193,85 @@ git commit -m "feat(highcharts): Radar（polar line）与 Rose（原生 variable
 - Test: `sdk/tests/converter.test.ts`
 - Test: `sdk/tests/validate.test.ts`
 
-- [ ] **Step 1: 扩展 schema enum**
+- [ ] **Step 1: 目录追加 9 条（基准先改）**
+
+`specs/chart-types.json` 的 `types[]` 末尾追加（既有 11 条不动；`selection_policy` 本 Task 也不动——若它同期已有新增条目，保持原样。新条目排在既有 11 条之后，这决定了 prompt 规则 1 与选型段里 9 个新图型的位置；`server/tests/test_prompt.py` 逐位断言渲染顺序 == 目录 `types[].type` 顺序）：
+
+```json
+    {
+      "type": "lollipop",
+      "flint": "Lollipop Chart",
+      "required_channels": ["x", "y"],
+      "hc_modules": [],
+      "selection": "类目排序对比、且想突出「每个类目到基准线的距离」时用（细茎 + 圆点，比 bar 更轻）。"
+    },
+    {
+      "type": "waterfall",
+      "flint": "Waterfall Chart",
+      "required_channels": ["x", "y"],
+      "hc_modules": ["highcharts/highcharts-more.js"],
+      "selection": "要解释一个总量如何被一连串增减项逐步累积出来时用（首柱锚零、末柱复述总额）。"
+    },
+    {
+      "type": "funnel",
+      "flint": "Funnel Chart",
+      "required_channels": ["x", "y"],
+      "hc_modules": ["highcharts/modules/funnel.js"],
+      "selection": "流程各阶段的转化/流失（阶段有序、数值自上而下递减的漏斗语义）。"
+    },
+    {
+      "type": "pyramid",
+      "flint": "Pyramid Chart",
+      "required_channels": ["x", "y"],
+      "hc_modules": [],
+      "selection": "两组同类别需要左右镜像对比构成时用（如人口金字塔的年龄段 × 性别）。"
+    },
+    {
+      "type": "gauge",
+      "flint": "Gauge Chart",
+      "required_channels": ["y"],
+      "hc_modules": ["highcharts/highcharts-more.js"],
+      "selection": "单个汇总指标（均值/占比）相对量程的位置——只有一个数值、不需要比较类目。"
+    },
+    {
+      "type": "streamgraph",
+      "flint": "Streamgraph",
+      "required_channels": ["x", "y"],
+      "hc_modules": ["highcharts/modules/streamgraph.js"],
+      "selection": "多个系列随时间的体量变化与构成（以流的宽度表达，强调整体形态而非精确读数）。"
+    },
+    {
+      "type": "boxplot",
+      "flint": "Boxplot",
+      "required_channels": ["x", "y"],
+      "hc_modules": ["highcharts/highcharts-more.js"],
+      "selection": "同一度量在多个类目下的分布（中位数/四分位/离群点）——保留原始观测行，不要先聚合。"
+    },
+    {
+      "type": "rose",
+      "flint": "Rose Chart",
+      "required_channels": ["x", "y"],
+      "hc_modules": ["highcharts/modules/variable-pie.js"],
+      "selection": "类目量级比较、而类目数偏多时的环形变体（等角扇区、面积随值）。"
+    },
+    {
+      "type": "radar",
+      "flint": "Radar Chart",
+      "required_channels": ["x", "y"],
+      "hc_modules": ["highcharts/highcharts-more.js"],
+      "selection": "同一实体在多个指标上的画像对比（≥3 个指标、量纲可比）。"
+    }
+```
+
+填写要点：
+
+- `flint` 必须**逐字**等于两个转换器将映射到的 Flint chart 名（Step 4/5 的 `FLINT_CHART_TYPE` 值；注意 `Boxplot`、`Streamgraph` 无 "Chart" 后缀），否则守卫的 `types[].flint 与两个转换器一致` 会红。
+- `required_channels` 必须**逐项等于** Step 7 给 `REQUIRED_CHANNELS` 加的那 9 行（gauge 仅 `["y"]`，其余 `["x", "y"]`；`series` 永不入表）。
+- `selection` 必须非空（守卫查非空；`server/tests/test_prompt.py` 还会断言选型段里每行**逐字**等于目录的 `selection`——它直接渲染进 prompt，是模型选型的唯一依据，不要留 TODO 或英文占位）。
+- `hc_modules` **没有任何机器校验**（守卫与 pytest 都不看它，已知缺口，见「关键约束」11）：必须照 Task 0 Step 1 的 `HC_CHART_MODULES` 登记表 / Task 10 的 INTEGRATION 对照表逐字抄——waterfall / boxplot / gauge / radar → `["highcharts/highcharts-more.js"]`，funnel → `["highcharts/modules/funnel.js"]`，streamgraph → `["highcharts/modules/streamgraph.js"]`，rose → `["highcharts/modules/variable-pie.js"]`，零模块复合模板 lollipop / pyramid → `[]`（顺序敏感时数组即加载顺序）。
+- 改完这一条后 `node scripts\check-chart-types.mjs` 会以 **exit 1** 逐条点名还没跟上的地方：4 处静态来源的集合差异（形如 `✗ <来源>` + `缺 20 种白名单中的：lollipop, waterfall, …` / `多出：（无）`）、`types[].flint 与两个转换器一致`（两个适配器里这 9 个键还缺失，逐个打印 `目录：… / 代码：（缺失）`）、`REQUIRED_CHANNELS` 缺这 9 个图型（`validate.ts 的 REQUIRED_CHANNELS 缺 lollipop`）——Step 2–7 就是把这些补齐。**差异里不会出现 `prompt.py`**：它不是来源，规则 1/选型段早已由目录渲染成 20 种，也不需要在那儿新增任何枚举（写了反而会被守卫的「未检出图型枚举形状」启发式检查打红）。
+
+- [ ] **Step 2: 扩展 schema enum**
 
 `specs/chart-spec.schema.json` 的 `chart.type` enum（第 18–21 行）：
 
@@ -2185,7 +2284,7 @@ git commit -m "feat(highcharts): Radar（polar line）与 Rose（原生 variable
           ]
 ```
 
-- [ ] **Step 2: 扩展 SDK 类型**
+- [ ] **Step 3: 扩展 SDK 类型**
 
 `sdk/src/types.ts`：
 
@@ -2197,7 +2296,7 @@ export type ChartType =
   | "streamgraph" | "boxplot" | "rose" | "radar";
 ```
 
-- [ ] **Step 3: Highcharts 适配器映射 + 类型**
+- [ ] **Step 4: Highcharts 适配器映射 + 类型**
 
 `sdk/src/converter/highcharts.ts`：
 
@@ -2236,7 +2335,7 @@ export type ChartType =
       break;
 ```
 
-- [ ] **Step 4: ECharts 适配器映射**
+- [ ] **Step 5: ECharts 适配器映射**
 
 `sdk/src/converter/echarts.ts`：`FLINT_CHART_TYPE` 加同样的 9 个条目；内联映射在 `else if (spec.chart.type === "groupedBar")` 之后补：
 
@@ -2251,7 +2350,7 @@ export type ChartType =
   }
 ```
 
-- [ ] **Step 5: SDK 用例**
+- [ ] **Step 6: SDK 用例**
 
 `sdk/tests/converter.test.ts`：
 
@@ -2303,7 +2402,7 @@ export type ChartType =
   });
 ```
 
-- [ ] **Step 6: 扩展通道校验器（validate.ts）与用例**
+- [ ] **Step 7: 扩展通道校验器（validate.ts）与用例**
 
 `sdk/src/converter/validate.ts` 的 `REQUIRED_CHANNELS` 追加 9 行（映射依据 = 「SDK 映射后后端实际消费什么」，与 B1 既有注释同一原则；`series` 对全部图型仍可选，永不入表）：
 
@@ -2324,7 +2423,7 @@ export type ChartType =
 
 `sdk/tests/validate.test.ts`：
 
-(1) `ALL_TYPES` 列表补 9；并把两个 `describe` 标题里的「11 种图型」改为「20 种图型」：
+(1) `ALL_TYPES` 列表补 9；并把 `describe("validateChannels: 11 种图型必需通道齐全时不抛", …)` 标题里的「11 种图型」改为「20 种图型」（该文件只有这一处 describe 标题含图型数量）：
 
 ```typescript
 const ALL_TYPES: ChartType[] = [
@@ -2369,40 +2468,52 @@ describe("validateChannels: B2 图型必需通道", () => {
 
 （其中 `xy2series` 直接复用文件里已有的 `series` 对象写法：`const xy2series = { series: { field: "region", value_type: "categorical" as const } };`。）
 
-> 校验器是**纯函数**，不依赖 vendor dist——3 个新 it 本身可离线跑通；但 V8 全量还包含 Step 5 的 funnel/gauge 转换用例（依赖新模板的 dist），重建前整体是 2 红 47 绿，见命令速查 V8 注。
+> 校验器是**纯函数**，不依赖 vendor dist——3 个新 it 本身可离线跑通；但 V8 全量还包含 Step 6 的 funnel/gauge 转换用例（依赖新模板的 dist），重建前整体是 2 红 47 绿，见命令速查 V8 注。
 
-- [ ] **Step 7: 沙箱验证（含白名单守卫——本步 V7 红是预期）**
+- [ ] **Step 8: 沙箱验证（V7 应为绿——目录驱动，prompt 不可能滞后）**
 
 Run: V4（无输出）→ **V7** → V1/V2/V3（parity 仍 20 行全绿——适配器/校验器改动不影响 parity 直连 Flint 模板）。
-Expected: **V7 红是预期**：`check-chart-types.mjs` 会打印 prompt.py 缺 9 种（schema/types/adapters 已是 20 种，prompt.py 规则 1 仍是 11 种——五处白名单中唯一滞后处）。该行由 Task 9 Step 1 补齐，Task 9 Step 3 的 V7 转绿（本 Task 的 Files 不包含 `prompt.py`，提交信息与此一致）。SDK 的**行为**用例（Step 5 的 funnel/gauge、Step 6 校验器用例）需 vendor `dist/` 重建后在 V8/权威测试中验证：校验器用例沙箱可跑（纯函数），funnel/gauge 转换用例沙箱内为红（stale dist 无新模板），见命令速查 V8 注。
+Expected: **V7 绿（exit 0）**。守卫会先打印 5 个来源各自的集合（`[1/5] specs/chart-types.json（types[].type，基准）` … `[5/5] sdk/src/converter/echarts.ts（FLINT_CHART_TYPE 键）`，各 `→ 20 种：…`）与一行说明 `· server/chartbrain_server/spec/prompt.py 规则 1 由目录生成，不列为独立来源；其渲染结果由 pytest 断言（server/tests/test_prompt.py）`，然后是各条 ✓。下面这段是从 HEAD `b392f54` 的**真实运行输出**（11 种）逐行改写为 20 种的形态——只有括号里的数字与「11→20」随图型数变化，其余字样一字未改：
 
-- [ ] **Step 8: 请用户跑权威测试并提交**
+```
+✓ 5 处白名单集合一致（20 种）
+✓ types[].flint 与两个转换器一致（20 图型）
+✓ types[].required_channels 与 validate.ts REQUIRED_CHANNELS 一致（20 图型）
+✓ types[].selection 非空（20/20）、selection_policy 非空
+✓ prompt.py 规则 1 与选型段仍由目录渲染（占位符 + .replace 调用 + 取数来源）
+✓ prompt.py 未检出图型枚举形状（≤16 字符窗口；渲染正确性由 pytest 断言）
+✓ types[].type 唯一（20 条无重复）
+✓ schema_version 存在且为 ≥ 1 的整数
+✓ types[].flint 非空（20/20）
+✓ types[].required_channels 取值 ∈ {x, y, series}
+
+✅ 目录与 5 处静态来源一致（20 种）；渲染后的 prompt 由 server/tests/test_prompt.py 断言
+```
+
+（真实 11 种基线里，最后一行是 `✅ 目录与 5 处静态来源一致（11 种）；渲染后的 prompt 由 server/tests/test_prompt.py 断言`，各 ✓ 行同理为 `（11 种）/（11 图型）/（11/11）/（11 条无重复）`。）**本 Task 内不再有「V7 红 → Task 9 转绿」的编排**：规则 1 由目录渲染，`prompt.py` 不是守卫来源，因此不存在「契约已 20 种、prompt 还停在 11 种」的滞后状态；本 Task 也不需要、且不允许编辑 `prompt.py`（其 Files 不含该文件）。若 V7 仍红，diff 只会指向目录与**四处代码副本 / `REQUIRED_CHANNELS`** 中的某一处（守卫按集合打印「缺 20 种白名单中的：…/多出：…」）。
+
+SDK 的**行为**用例（Step 6 的 funnel/gauge、Step 7 的校验器用例）需 vendor `dist/` 重建后在 V8/权威测试中验证：校验器用例沙箱可跑（纯函数），funnel/gauge 转换用例沙箱内为红（stale dist 无新模板），见命令速查 V8 注。
+
+- [ ] **Step 9: 请用户跑权威测试并提交**
 
 请用户执行：`cd <repo>\vendor\flint-chart\packages\flint-js; npm run build`（重建 dist，SDK 经 file: 链接消费）→ `cd <repo>\sdk; npm run typecheck; npm test`
 Expected: typecheck 无输出；sdk npm test 全绿（44 基线 + 5 新增 it = 49 passed：converter +2、validate +3）。
-注：`check-chart-types.mjs` 在 Task 8 内仍是红（prompt.py 规则 1 尚未更新，见 Step 7 预期），由 Task 9 Step 1 补齐后转绿——本 Task 的提交不含 prompt.py，与该预期一致。
+注：本 Task 的 Files **不含 `prompt.py`**——规则 1 白名单与选型段由目录渲染，Step 1 改完目录即已生效；V7 在 Step 8 就该是绿的，不需要也不允许在本 Task 里手改 prompt 白名单（多写一份反而会被守卫的「未检出图型枚举形状」启发式检查打红）。
 
 ```bash
-git add specs/chart-spec.schema.json sdk/src/types.ts sdk/src/converter/highcharts.ts sdk/src/converter/echarts.ts sdk/src/converter/validate.ts sdk/tests/converter.test.ts sdk/tests/validate.test.ts
-git commit -m "feat(spec): 白名单扩至 20 种图型（B2 九个）+ 双端通道映射与 REQUIRED_CHANNELS（funnel/gauge 例外）"
+git add specs/chart-types.json specs/chart-spec.schema.json sdk/src/types.ts sdk/src/converter/highcharts.ts sdk/src/converter/echarts.ts sdk/src/converter/validate.ts sdk/tests/converter.test.ts sdk/tests/validate.test.ts
+git commit -m "feat(spec): 图型目录扩至 20 种（B2 九个）+ 四处代码副本与 REQUIRED_CHANNELS（funnel/gauge 例外）"
 ```
 
-### Task 9: 服务端提示词白名单 + 9 条 few-shot
+### Task 9: 服务端 few-shot（9 条，覆盖 B2 九个图型）
 
 **Files:**
-- Modify: `server/chartbrain_server/spec/prompt.py`
+- Modify: `server/chartbrain_server/spec/prompt.py`（**只加 few-shot**；规则 1 白名单与「Chart type selection」选型段由目录渲染，本 Task 不编辑）
+- Test: `server/tests/test_prompt.py`（守护测试；既有断言已覆盖本 Task，**无需修改**）
 
-- [ ] **Step 1: 更新白名单行**
+> 白名单同步在 Task 8 就结束了（目录 + 四处代码副本），本 Task **不是**「让 V7 转绿的那一步」——V7 在 Task 8 Step 8 即为绿，且与 few-shot 无关（守卫只看 5 处静态来源与目录不变量，不看 few-shot）。这里只剩一件事：给 9 个新图型各补一条 few-shot，让模型有可照抄的形状（`server/tests/test_prompt.py::test_every_few_shot_chart_spec_passes_l1` 会对全部 19 条逐条跑 L1 校验；目录渲染出的规则 1 / 选型行 / 策略条目由该文件其余断言覆盖，新增图型无需改这些测试）。
 
-`server/chartbrain_server/spec/prompt.py` 第 28 行改为（一段）：
-
-```python
-1. chart.type must be one of: bar | line | pie | scatter | area | groupedBar | stackedBar | donut | slope | connectedScatter | strip | lollipop | waterfall | funnel | pyramid | gauge | streamgraph | boxplot | rose | radar.
-```
-
-（这是五处白名单同步的最后一步：schema / `ChartType` union / 两个 adapter 已在 Task 8 更新；此行补齐后 `node scripts\check-chart-types.mjs` 由红转绿（Task 9 Step 3 验证）。）
-
-- [ ] **Step 2: 追加 9 条 few-shot**
+- [ ] **Step 1: 追加 9 条 few-shot**
 
 在 `build_user_prompt` 的 `few_shot_examples` 列表末尾（`strip` 条目 `},` 之后、收尾 `],` 之前）插入以下条目。结构与既有条目一致（`query` / `columns` / `chart_spec`）；缩进风格可微调，但字段与 L1 schema 必须逐字合法（`server/tests/test_prompt.py` 会对每条跑 `validate_spec`）。文件现含 **10** 条既有示例（含 bar/line×2/groupedBar/stackedBar/pie/donut/slope/connectedScatter/strip），本轮 **+9 → 共 19 条**。
 
@@ -2671,14 +2782,14 @@ radar（x = 指标名、y = 值、series = 实体；每（实体 × 指标）一
 
 注意（示例之间取舍的语义）：`boxplot` 保留原始行（分布不能先聚合）、`radar` 保留（实体×指标）原始行（模板取均值）、`gauge` 用 `avg` 聚成单行、`rose/funnel/waterfall/pyramid/lollipop/streamgraph` 先按分组聚合（模板内部再按阶段求和）。**通道校验契合**：9 条 few-shot 的 `encodings` 都满足 Task 8 扩展后的 `REQUIRED_CHANNELS`（gauge 只有 y，其余均有 x+y，series 可选）。
 
-- [ ] **Step 3: 沙箱验证 + 请用户跑权威测试**
+- [ ] **Step 2: 沙箱验证 + 请用户跑权威测试**
 
-Run: V6 → 期望 37 passed（守卫测试 `test_prompt_whitelist_matches_schema_enum` 自动覆盖「prompt 白名单 == schema enum（20）」；`test_every_few_shot_chart_spec_passes_l1` 对 19 条 few-shot（既有 10 + 新增 9）全量校验）；再跑 **V7** → 期望 `✅ 5 处白名单一致（20 种）`（Task 8 里 V7 红，本步转绿）。
-Expected: 37 passed；白名单守卫全绿。
+Run: V6 → 期望 **66 passed**（同期 `server/tests/test_prompt.py` 新增的 4 条断言落地后为 **70 passed**；B2 不新增 server 测试函数，数字不因本批变化）。断言分工：`test_prompt_whitelist_matches_schema_enum` 断言渲染出的规则 1 == schema enum == 目录类型集合（20）；`test_prompt_rule1_token_order_follows_catalog_order` / `test_prompt_selection_lines_order_follows_catalog_order` 断言规则 1 token 顺序与选型段行序逐位等于目录 `types[]` 顺序；`test_prompt_selection_lines_match_catalog_hints` 断言每行选型说明逐字来自目录；`test_every_few_shot_chart_spec_passes_l1` 对 19 条 few-shot（既有 10 + 新增 9）全量跑 L1。再跑 **V7** → 期望仍是 `✅ 目录与 5 处静态来源一致（20 种）；渲染后的 prompt 由 server/tests/test_prompt.py 断言`（Task 8 Step 8 已转绿，本步只是复核——few-shot 不参与守卫的 5 处静态来源）。
+Expected: 66 passed（同期 test_prompt.py 的 +4 断言落地后为 70 passed；本批不新增 server 测试函数，故与基线同数）；V7 保持绿。
 
 ```bash
 git add server/chartbrain_server/spec/prompt.py
-git commit -m "feat(prompt): 白名单与 few-shot 扩至 20 种图型（B2 九个）"
+git commit -m "feat(prompt): few-shot 扩至 19 条（B2 九个图型；白名单/选型段由目录渲染）"
 ```
 
 ### Task 10: 示例与文档（对比页 + 模块对照表修订 + `_requiredModules` 契约）
@@ -2939,7 +3050,7 @@ Expected: 无输出。
 | `series[].type` | B2 起不再恒等于 `chart.type`：复合模板含多种 series 类型（如 lollipop = `column` 茎 + `scatter` 点） |
 ```
 
-(2) **在既有「已验证模块表」上修订，而不是重写**：`docs/INTEGRATION.md` 现（HEAD `73cdd65`）已有「Highcharts 模块对照表（已发布 B1 + 规划 B2/B3）」段（第 184–202 行），rose/histogram 行已实测（variablepie、histogram/bellcurve）。把该段 184–202 行整体替换为：
+(2) **在既有「已验证模块表」上修订，而不是重写**：`docs/INTEGRATION.md` 现（HEAD `b392f54` 复核）已有「Highcharts 模块对照表（已发布 B1 + 规划 B2/B3）」段（第 184–202 行），rose/histogram 行已实测（variablepie、histogram/bellcurve）。把该段 184–202 行整体替换为：
 
 ```markdown
 ### Highcharts 模块对照表（已发布 B1 + B2；规划 B3）
@@ -2983,7 +3094,7 @@ git commit -m "docs: B2 模块机制（_requiredModules 有序加载）+ 模块�
 
 - [ ] **Step 1: 沙箱全量验证**
 
-Run: V1 → V2 → V3（期望 20 passed, 0 failed）→ V4 → V5（期望 `files=56 passed=1135 failed=0` + ✅）→ V6（37 passed）→ **V7**（期望 `✅ 5 处白名单一致（20 种）`）→ V8（期望 SDK suite 在 44 基线基础上 +5 it = 49 passed；其中 funnel/gauge 转换用例需用户重建 dist 后才绿，沙箱内以「44 + 校验器 3 例」为界）→ 模块注册探针（Task 0 Step 6 的 `b2-check-modules.cjs`，期望 11 个 `✓` + ✅）→ V9 留到 Step 3（依赖该步重新生成的 20 用例页面）
+Run: V1 → V2 → V3（期望 20 passed, 0 failed）→ V4 → V5（期望 `files=56 passed=1135 failed=0` + ✅）→ V6（66 / 70 passed，见命令速查）→ **V7**（期望 `✅ 目录与 5 处静态来源一致（20 种）；渲染后的 prompt 由 server/tests/test_prompt.py 断言`，exit 0）→ V8（期望 SDK suite 在 44 基线基础上 +5 it = 49 passed；其中 funnel/gauge 转换用例需用户重建 dist 后才绿，沙箱内以「44 + 校验器 3 例」为界）→ 模块注册探针（Task 0 Step 6 的 `b2-check-modules.cjs`，期望 11 个 `✓` + ✅）→ V9 留到 Step 3（依赖该步重新生成的 20 用例页面）
 Expected: 全部通过。
 
 - [ ] **Step 2: 请用户跑全部权威测试**
@@ -2995,7 +3106,7 @@ cd D:\work\aichart\ChartBrain\server; .\.venv\Scripts\python -m pytest -q
 node D:\work\aichart\ChartBrain\scripts\check-chart-types.mjs
 ```
 
-Expected: vendor 全绿（56 files / ≥1135 tests，新增用例全过）；sdk typecheck 无输出、npm test 全绿（44 基线 + 5 = 49 passed）；server 37 passed；check-chart-types `✅ 5 处白名单一致（20 种）`。
+Expected: vendor 全绿（56 files / ≥1135 tests，新增用例全过）；sdk typecheck 无输出、npm test 全绿（44 基线 + 5 = 49 passed）；server 66 passed（同期 `test_prompt.py` 的 +4 断言落地后 70 passed；B2 不新增 server 测试函数）；check-chart-types `✅ 目录与 5 处静态来源一致（20 种）；渲染后的 prompt 由 server/tests/test_prompt.py 断言`（exit 0；`prompt.py` 规则 1 不在守卫来源内，它由目录渲染）。
 
 - [ ] **Step 3: 生成对比页并目测（重点核对本批形态差异）**
 
@@ -3035,11 +3146,11 @@ git commit -m "chore: B2 验收通过（20 图型双端一致）" || echo "无�
 1. **模板**：9 个 HC 模板全部注册（`hcGetTemplateDef` 可查），`hcAllTemplateDefs` 含 20 个图型名；每个模板只做「语义 → options」翻译，不重复判定字段类型、不缺必要通道时留下半成品（早退守卫）。
 2. **模块（有序契约 + 真实注册）**：`hcRequiredModules` 返回与 INTEGRATION 表一致，**数组语义 = 加载顺序**；需要模块的模板在输出上携带 `_requiredModules`；复合模板（lollipop/pyramid）不携带；库不含任何 HC 运行时 import。沙箱探针（Task 0 Step 6）用真实 12.6.0 bundle 断言：`highcharts-more` → `waterfall/boxplot/gauge/arearange` 注册 + Chart.prototype 出现 polar/radial 成员（radar）；`funnel.js` → `funnel/pyramid`；`streamgraph.js` → `streamgraph`；`variable-pie.js` → `variablepie`；`histogram-bellcurve.js` → `histogram`/`bellcurve`（B3 预留）。
 3. **双端一致**：`scripts/chart-parity.mjs` 20 行全绿（含 B2 九行的逐类型 `check`）；每个 B2 用例的 HC/EC series 类型、逐点数值（或经自定义断言映射后的数值）一致。
-4. **契约五处同步 + 校验器 + 守卫**：schema enum、`sdk/src/types.ts`、两个 adapter 的 `FLINT_CHART_TYPE`/通道映射全部含 9 个新图型；`HighchartsOption` 有 `_requiredModules` 可选字段；`sdk/src/converter/validate.ts` 的 `REQUIRED_CHANNELS` 覆盖 9 个新图型（gauge 仅 `y`，其余 `x`+`y`，`series` 一律可选）；`node scripts\check-chart-types.mjs` 输出 `✅ 5 处白名单一致（20 种）`。
-5. **prompt**：白名单规则 1 与 schema enum 集合相等（守卫测试断言）；19 条 few-shot（既有 10 + 新增 9）全部过 L1。
-6. **权威测试全绿**（用户执行）：vendor `npm run build && npm test`；sdk `npm run typecheck && npm test`（44 基线 +5 = 49 passed）；server `pytest` 37 passed。
+4. **目录 + 四处代码副本 + 校验器 + 守卫**：`specs/chart-types.json` 追加 9 条（`type`/`flint`/`required_channels`/`hc_modules`/`selection`，其中 `hc_modules` 无机器校验、须照实测模块表逐字填）；schema enum、`sdk/src/types.ts`、两个 adapter 的 `FLINT_CHART_TYPE`/通道映射全部含 9 个新图型；`HighchartsOption` 有 `_requiredModules` 可选字段；`sdk/src/converter/validate.ts` 的 `REQUIRED_CHANNELS` 覆盖 9 个新图型（gauge 仅 `y`，其余 `x`+`y`，`series` 一律可选）；`node scripts\check-chart-types.mjs` 输出 `✅ 目录与 5 处静态来源一致（20 种）；渲染后的 prompt 由 server/tests/test_prompt.py 断言`（exit 0）。`prompt.py` 的白名单**未被手改**（规则 1 与选型段由目录渲染，Task 8 的 Files 不含该文件）。
+5. **prompt**：渲染出的规则 1 == schema enum == 目录类型集合（20），且规则 1 的 token 顺序与选型段行序逐位等于目录 `types[]` 顺序（`server/tests/test_prompt.py` 断言）；每个目录图型在「Chart type selection」段有一行、说明逐字来自目录 `selection`；19 条 few-shot（既有 10 + 新增 9）全部过 L1。
+6. **权威测试全绿**（用户执行）：vendor `npm run build && npm test`；sdk `npm run typecheck && npm test`（44 基线 +5 = 49 passed）；server `pytest` 66 passed（同期 `test_prompt.py` 的 +4 断言落地后 70 passed）。
 7. **示例与文档**：`offline.mjs` 生成的对比页覆盖 20 个图型、模块按序内联/兜底，左右两侧都能渲染；`docs/INTEGRATION.md` 模块表（修订既有已验证表：lollipop/pyramid 复合零模块、rose = 实测 `variablepie`、histogram 行注明 B3 决策）与 `_requiredModules` 契约更新。
-8. **回滚**：每 Task 独立提交；契约与模板同批提交（spec 放行但后端无模板 = `Unknown … chart type` 报错；白名单五处 + `REQUIRED_CHANNELS` 不同步会被 `check-chart-types`/校验器测试拦下）。
+8. **回滚**：每 Task 独立提交；契约与模板同批提交（spec 放行但后端无模板 = `Unknown … chart type` 报错；目录 / 四处代码副本 / `REQUIRED_CHANNELS` 不同步会被 `check-chart-types` 或校验器测试拦下）。`specs/chart-types.json` 与四处代码副本必须同一批回滚（目录是基准，单回滚任一侧守卫即红）；`prompt.py` 的 few-shot 与目录解耦，可单独 revert。
 
 ## 风险与回退
 
@@ -3056,16 +3167,16 @@ git commit -m "chore: B2 验收通过（20 图型双端一致）" || echo "无�
 | Rose ≤0 度量在 HC `variablepie` 的表现与预期不符（钳 0 后是否仍保留等角槽位） | 低 | 设计上双端统一钳 0（镜像 EC sqrt(max(0,·))）；parity 夹具用正值；若目测发现负值/零值扇区异常，在风险表中记录并补一个负值夹具决策 |
 | 沙箱无法重建 vendor `dist/`，SDK 行为用例要等用户 `npm run build` | 中 | 行为验证只依赖 V1–V9 中适用项 + parity（对 `.tmp-build`）；SDK 新图型转换用例权威执行放到 Task 8/11 的用户步骤 |
 | `.verify/run-all-vendor-tests.cjs` 退出码受既有 excel-runtime 异步 rejection 影响（≠0） | 低 | 以 `failed=0` + ✅ 行为绿；权威 = 用户 `npm test` |
-| 若最终某图型在用户真实浏览器目测仍无法对齐 | 中 | 单 Task 独立提交可单独 revert；契约白名单与对应模板同批回滚 |
+| 若最终某图型在用户真实浏览器目测仍无法对齐 | 中 | 单 Task 独立提交可单独 revert；图型目录与对应模板同批回滚（目录回退后 prompt 的规则 1/选型段随之回退，无需单独改 prompt） |
 
 ---
 
 ## 自审记录
 
-- **spec 覆盖**：设计 §2.2 的 B2 九项 → Task 1–7（逐图型模板 + parity 翻转）；§4 契约五处 + `REQUIRED_CHANNELS` 校验器 + `check-chart-types.mjs` 守卫 → Task 8 + Task 9；§6 验收 → Task 0/11 + 演示/文档 Task 10；模块机制 → Task 0 + INTEGRATION；`docs/more-chart-types-design.md` 附录 B 的 rose/pyramid/radar 形态差异 → 裁决表与风险表显式声明。
+- **spec 覆盖**：设计 §2.2 的 B2 九项 → Task 1–7（逐图型模板 + parity 翻转）；§4 契约（`specs/chart-types.json` 图型目录 + 四处代码副本 + `REQUIRED_CHANNELS` 校验器 + `check-chart-types.mjs` 守卫；prompt 规则 1/选型段由目录渲染）→ Task 8，few-shot → Task 9；§6 验收 → Task 0/11 + 演示/文档 Task 10；模块机制 → Task 0 + INTEGRATION；`docs/more-chart-types-design.md` 附录 B 的 rose/pyramid/radar 形态差异 → 裁决表与风险表显式声明。
 - **占位符扫描**：所有 Step 均含真实代码与精确命令；few-shot 九条全部逐字给出；无 TBD/TODO。
-- **类型一致性**：图型字符串在 HC 注册 / EC 注册 / `FLINT_CHART_TYPE` / parity CASES / INTEGRATION 中逐字一致（`Boxplot`、`Streamgraph` 无 Chart 后缀）；`hcRequiredModules` 键与注册名一一对应；SDK `ChartType` 新值与 schema enum 完全同序；`check(hc, ec)` 命名与既有 parity 用例一致。
-- **验证命令均沙箱实测（HEAD `73cdd65`）**：V1/V2/V4 exit 0；V3 基线 11 passed；V5 基线 `files=56 passed=1122`；V6 基线 37 passed；V7 基线 `✅ 5 处白名单一致（11 种）`；V8 基线 44 passed；V9 基线 11/11 ok——文中「期望值」均从这些基线外推。模块注册探针命令（Task 0 Step 6）按真实 bundle 实测的加载 recipe（`window` 桩 + `core.default || core` + `require(mod)(HC)`）书写；断言项（waterfall/boxplot/gauge/arearange/funnel/pyramid/streamgraph/variablepie/histogram/bellcurve/polar 成员）与维护者提供的新探针证据逐项一致（含 lollipop 三模块链的依赖与失败形态、`variable-pie.js` 与 `histogram-bellcurve.js` 的实测注册）。Rose 按证据改用原生 `variablepie`（等角 + z=原始值、≤0 钳 0；此前「模块未下载/无网络」前提已失效），Histogram 前瞻决策备忘随附。V5 不再需要移开 heatmap-colors.test.ts：编译改用 `.verify` 下带 `vega-lite` paths 映射的 sidecar tsconfig（CJS 产物 + ESM preload stub）。
+- **类型一致性**：图型字符串在 `specs/chart-types.json` 的 `types[].flint` / HC 注册 / EC 注册 / `FLINT_CHART_TYPE` / parity CASES / INTEGRATION 中逐字一致（`Boxplot`、`Streamgraph` 无 Chart 后缀；守卫按集合比对 `types[].flint` 与两个适配器）；`hcRequiredModules` 键与注册名一一对应，目录 `hc_modules` 与它逐字对齐（**无机器校验，靠人工**）；`ChartType` 新值与 schema enum 集合一致（守卫按集合比对，顺序以目录 `types[]` 为准）；`check(hc, ec)` 命名与既有 parity 用例一致。
+- **验证命令均沙箱实测（HEAD `73cdd65`；契约模型/基线于 HEAD `b392f54` 复核，V6/V7 重测）**：V1/V2/V4 exit 0；V3 基线 11 passed；V5 基线 `files=56 passed=1122`；V6 基线 `66 passed`（`b392f54` 实测；复核期间同期给 `test_prompt.py` 加了 4 条断言 → 70 passed；旧值 37 已作废）；V7 基线 `✅ 目录与 5 处静态来源一致（11 种）；渲染后的 prompt 由 server/tests/test_prompt.py 断言`（`b392f54` 实测，10 条 ✓；退出码 0/1/2 = 全绿/不一致/读取解析失败，纯静态、无 Python 子进程）；V8 基线 44 passed；V9 基线 11/11 ok——文中「期望值」均从这些基线外推。契约同步的描述以 `b392f54` 的 `specs/chart-types.json` + `scripts/check-chart-types.mjs` + `server/chartbrain_server/spec/prompt.py`（目录渲染，规则 1 与选型段由 `.replace(...)` 注入）+ `server/tests/test_prompt.py` 为准。模块注册探针命令（Task 0 Step 6）按真实 bundle 实测的加载 recipe（`window` 桩 + `core.default || core` + `require(mod)(HC)`）书写；断言项（waterfall/boxplot/gauge/arearange/funnel/pyramid/streamgraph/variablepie/histogram/bellcurve/polar 成员）与维护者提供的新探针证据逐项一致（含 lollipop 三模块链的依赖与失败形态、`variable-pie.js` 与 `histogram-bellcurve.js` 的实测注册）。Rose 按证据改用原生 `variablepie`（等角 + z=原始值、≤0 钳 0；此前「模块未下载/无网络」前提已失效），Histogram 前瞻决策备忘随附。V5 不再需要移开 heatmap-colors.test.ts：编译改用 `.verify` 下带 `vega-lite` paths 映射的 sidecar tsconfig（CJS 产物 + ESM preload stub）。
 
 <!-- B2-PLAN-END -->
 
