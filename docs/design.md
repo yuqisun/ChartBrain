@@ -143,9 +143,11 @@
 | `aggregate` | `group_by[]`, `measures[]`(field + agg + as) | 分组聚合，产出新列 |
 | `sort` | `by`, `order`(asc/desc) | 排序 |
 | `limit` | `n` | 截断行数 |
-| （远期）| `topN` / `bin`(直方图) / `derive`(派生列，需公式校验) / `pivot` | 按需扩展 |
+| （远期）| `topN` / `bin`(直方图) / `pivot` | 按需扩展 |
 
 聚合函数 enum：`sum | avg | count | countDistinct | min | max`（MVP 先做前五个，median 视需要）。
+
+`binTime` / `derive` 已随 P1 落地（见 §4.4，D14），`percent` / `growth` 为 P2 规划；本表只列 MVP 与仍属远期的算子。
 
 ### 4.3 为什么这样设计（调研支撑）
 
@@ -155,7 +157,7 @@
 
 ---
 
-## 4.4 扩展算子草案（D14，P1 实现中 / P2 规划）
+## 4.4 扩展算子（D14，P1 已落地 / P2 规划）
 
 **P1：`derive`（二元+常量，复杂公式用两步链）与 `binTime`**
 
@@ -234,7 +236,7 @@
 }
 // 消费端 @chartbrain/sdk：执行变换 → 转换（Highcharts / ECharts 均经 vendored flint-js）→ 绑定数据 → 渲染
 
-// 响应 422（校验失败） / 409（歧义，需澄清）
+// 响应 422（校验失败 error_kind=validation / 需澄清 error_kind=clarification；响应体含 error_kind / errors / repair_rounds） / 503（provider 故障）
 ```
 
 ### `POST /v1/validate`（已落地）
