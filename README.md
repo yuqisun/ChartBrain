@@ -66,7 +66,7 @@ Highcharts.chart("container", option);
 ```bash
 cd server
 python -m venv .venv && .\.venv\Scripts\pip install -e ".[dev]"
-.\.venv\Scripts\python -m pytest -q        # 35 tests
+.\.venv\Scripts\python -m pytest -q        # 70 tests
 .\.venv\Scripts\uvicorn chartbrain_server.main:app --port 8000
 ```
 
@@ -99,20 +99,21 @@ CI（GitHub Actions）：push/PR 自动跑 server pytest + vendor 构建 + sdk t
 ```
 viz-ai/
 ├── specs/chart-spec.schema.json   # 中性 spec JSON Schema（契约源，双端共享）
+├── specs/chart-types.json         # 图型目录（单一事实源：图型 / 必需通道 / Highcharts 模块 / 选型说明）
 ├── server/                        # chartbrain-server（Python/FastAPI，无状态意图层）
 │   ├── chartbrain_server/
-│   │   ├── api/        # POST /v1/charts（L1/L2 校验、错误分类、审计日志）
+│   │   ├── api/        # POST /v1/charts（生成 + L1/L2）· POST /v1/validate（纯校验）· GET /v1/chart-types（目录视图）
 │   │   ├── llm/        # Provider 抽象：mock / openai-compatible（DeepSeek 等）
 │   │   └── spec/       # prompt 编排、生成管线、L2 校验
 │   ├── scripts/eval_spec_baseline.py   # spec 质量基线评测
-│   └── tests/                          # 31 tests
+│   └── tests/                          # 70 tests
 ├── sdk/                             # @chartbrain/sdk（TypeScript，确定性执行层）
 │   └── src/  transform.ts（变换运行时）· converter/highcharts.ts · converter/echarts.ts（均经 vendored flint-js）
 ├── vendor/flint-chart/              # vendored flint-js 0.5.1 + 新增 Highcharts 后端（见 FORK.md）
 ├── examples/
 │   ├── highcharts-demo/            # 单库端到端 demo
 │   └── dual-demo/                  # 同一 spec → Highcharts + ECharts 并排
-├── docs/design.md                  # 设计文档：决策记录 D1–D13 + spec 草案 + 路线图
+├── docs/design.md                  # 设计文档：决策记录 D1–D16 + spec 草案 + 路线图
 ├── research/                       # 竞品调研分报告
 ├── ChartBrain_调研汇总报告.md        # 调研结论（可借鉴点 / 不足 / 避坑）
 ├── .github/workflows/ci.yml
@@ -136,7 +137,8 @@ viz-ai/
 - **M4 端到端 ✅**（NL→spec→SDK→Highcharts 出图）· **M4b 工程质量 ✅**（CI + LLM 韧性 + 审计）
 - **M5 双库化 ✅**（同一 spec → Highcharts / ECharts 并排渲染一致）
 - **P1 能力扩展 ✅（2026-09-05，D14）**：`binTime`（date 按月/季/年分桶）+ `derive`（二元+常量四则，两步链）；35 server + 27 sdk tests，eval 10/10 + 边界 2/2
-- 前瞻：`percent`（占比，4 窗口口径）与 `growth`（环比/同比）（P2，D14）、渲染比对回归、`/v1/validate`、MCP 交付、多轮改图
+- **校验与目录 ✅（2026-09-10）**：`POST /v1/validate`（结构化 `valid`/`errors`/`warnings`，spec 层面恒 200、请求体不合法仍 422）+ `GET /v1/chart-types`（`specs/chart-types.json` 目录视图）；`/v1/charts` 成功响应新增 `repair_rounds`
+- 前瞻：`percent`（占比，4 窗口口径）与 `growth`（环比/同比）（P2，D14）、渲染比对回归、MCP 交付（D16）、多轮改图
 
 ## 竞品定位
 
@@ -150,7 +152,8 @@ viz-ai/
 
 - [docs/FLOW.md](docs/FLOW.md) —— 全链路 Mermaid 流程图（调用/返回 + 步骤↔代码对照 + 消费端职责）
 - [docs/INTEGRATION.md](docs/INTEGRATION.md) —— Highcharts 消费端接入指南（完整步骤 + 代码）
-- [docs/design.md](docs/design.md) —— 完整设计（决策记录 D1–D14、spec 草案、路线图）
+- [docs/design.md](docs/design.md) —— 完整设计（决策记录 D1–D16、spec 草案、路线图）
+- [docs/mcp-delivery-design.md](docs/mcp-delivery-design.md) —— MCP 交付设计约束（D16，远期；工具面 / 资源 / 与 flint-mcp 的分歧）
 - `ChartBrain_调研汇总报告.md` —— 调研结论总览
 - `research/` —— 各主题详细调研与来源 URL
 
