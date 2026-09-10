@@ -43,6 +43,22 @@ class ChartRequest(BaseModel):
         return v
 
 
+class ValidateRequest(BaseModel):
+    """POST /v1/validate 请求体：中性 spec + 可选列元数据（不给则只校验 L1）。"""
+
+    spec: dict[str, Any]
+    columns: list[Column] = Field(default_factory=list, max_length=200)
+    constraints: Constraints | None = None
+
+
+class ValidateResponse(BaseModel):
+    """POST /v1/validate 响应：结构化校验结果（校验结果是 payload，不是 HTTP 错误）。"""
+
+    valid: bool
+    errors: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+
+
 class ChartResponse(BaseModel):
     """POST /v1/charts 响应（库配置由 SDK 生成，D13）。
 
