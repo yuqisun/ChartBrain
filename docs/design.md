@@ -45,6 +45,7 @@
 | D13 | 转换器执行位置（2026-09 定） | **确定性转换器随 @chartbrain/sdk 以 TS 发布、在消费端本地执行**（与 D12 对称，双库一致）；server 只做 LLM + L1/L2 校验 + 返回 spec/变换计划（无状态、不见数据）；变换、转换、绑定、L3 冒烟等全部确定性步骤在 SDK 完成 |
 | D14 | 能力扩展（2026-09 定，分批） | **P1**：`binTime`（date 按月/季/年分桶）+ `derive`（**二元+常量**四则，复杂公式用两步 derive 链）；**P2**：`percent`（countPercent，分母按 SQL 窗口语义：global/filtered/group/partition[fields]）+ `growth`（环比 mom / 同比 yoy，按 time_field 有序、partition 分区；首期/无前值→**null**，不补 0）。占比/增长率数值一律存 **0~1**，`%` 格式化归消费端/SDK 显示层。表达式与窗口细节见 §4.4 |
 | D15 | Highcharts 后端（2026-09 定，**取代 D11 的「转换器自研」**） | Highcharts 配置不再手写：**vendor flint-js（上游 0.5.1）到 `vendor/flint-chart/`，并在其中新增 `src/highcharts/` 后端**，与 ECharts 后端共用同一套编译器管线（语义 / 布局 / 主题）。理由：上游 `flint-chart/core` 未导出后端所需的内部函数（`applyAggregation` / `decideColorMaps` / `normalizeChartProperties` 等），且 `exports` 无通配符，深路径导入被封装 → vendor 后可 `import '../core/...'` 直接复用。上游**不追踪**（见 `vendor/flint-chart/FORK.md`）；SDK 经 `file:` 依赖消费。v1 覆盖 bar/line/area/scatter/pie，不支持 facet 与 chart-type 变换 |
+| D16 | MCP 交付（远期约束，2026-09-10） | 触发＝图型扩展稳定 + 守卫入 CI；工具面仅 `list_chart_types` / `validate_spec` / `ask_chart`（+ 显式 opt-in 的 `compile_spec`），**一个 schema 不对图型开工具**；可复用知识走 MCP resources（目录 / 契约 / 模块表均为**视图不是副本**）；**服务端永不渲染出图**（D13）。当前锁定为约束记录，不实现；详见 `docs/mcp-delivery-design.md` |
 
 ---
 
