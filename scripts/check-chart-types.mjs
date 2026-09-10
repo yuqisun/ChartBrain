@@ -20,9 +20,15 @@
  *   9. prompt.py 仍是「目录渲染」接线：模板含 __CHART_TYPES__ / __SELECTION_GUIDANCE__ 占位符，
  *      有对应的 .replace(...) 调用，且 _chart_type_names() / _selection_guidance() 确实从
  *      load_chart_types() 取数
- *  10. prompt.py 未硬编码图型枚举。启发式：两处不同的目录图型名之间只隔 ≤16 个非单词字符
- *      （含跨行）即视为枚举；few-shot 里单个 "type": "<图型>" 字面量与散文提及（如 "pie chart"）
- *      不算。它证明的是「没有手写枚举」，不证明「渲染出来的文本正确」——后者归 pytest。
+ *  10. prompt.py 未「检出」图型枚举形状。启发式：两处不同的目录图型名之间只隔 ≤16 个非单词字符
+ *      （含跨行）即判为枚举；few-shot 里单个 "type": "<图型>" 字面量与散文提及（如 "pie chart"）
+ *      不算。它**不**证明「没有手写枚举」——实测挡不住：逐行尾注释、`"bar": true,` 形式的键、
+ *      UPPERCASE 副本、间隔 ≥17 个非单词字符的写法（引号本身也算字符），都检不出来。它证明的只是
+ *      「没检出同段相邻枚举这一形状」；「渲染出来的文本正确」归 pytest（server/tests/test_prompt.py）。
+ *  11. 目录自身不变量：types[].type 唯一（无重复）
+ *  12. 目录自身不变量：schema_version 存在且为 ≥ 1 的整数
+ *  13. 目录自身不变量：types[].flint 非空
+ *  14. 目录自身不变量：types[].required_channels 取值 ∈ {x, y, series}
  *
  * 本脚本只做静态检查：跨语言白名单门禁不应因缺 Python 运行时或服务端依赖（pydantic/dotenv）变红。
  * 渲染后的 SYSTEM_PROMPT 由配套门禁断言：
@@ -255,8 +261,8 @@ check('prompt.py 规则 1 与选型段仍由目录渲染（占位符 + .replace 
   }
 });
 
-// 10. prompt.py 未硬编码图型枚举（启发式，见文件头说明）
-check('prompt.py 未硬编码图型枚举（两处图型名间仅隔 ≤16 个非单词字符即视为枚举）', () => {
+// 10. prompt.py 未检出图型枚举形状（启发式，能力边界见文件头说明）
+check('prompt.py 未检出图型枚举形状（≤16 字符窗口；渲染正确性由 pytest 断言）', () => {
   const alternation = [...catalogTypes].sort((a, b) => b.length - a.length).join('|');
   const re = new RegExp(`\\b(${alternation})\\b[^A-Za-z0-9_]{0,16}\\b(${alternation})\\b`, 'g');
   const seenLines = new Map();
@@ -270,6 +276,50 @@ check('prompt.py 未硬编码图型枚举（两处图型名间仅隔 ≤16 个�
   }
   for (const [line, text] of [...seenLines].slice(0, 5)) {
     fail(`prompt.py 第 ${line} 行疑似硬编码图型枚举：${JSON.stringify(text)}\n    白名单/选型段应由目录渲染；few-shot 里单个 "type": "<图型>" 字面量不算`);
+  }
+});
+
+// 11–14. 目录自身不变量（不依赖任何下游文件：目录写坏了本身就该红）
+const ALLOWED_CHANNELS = new Set(['x', 'y', 'series']);
+
+check(`types[].type 唯一（${catalogTypes.length} 条无重复）`, () => {
+  const seen = new Set();
+  const dupes = new Set();
+  for (const name of catalogTypes) {
+    if (seen.has(name)) dupes.add(name);
+    seen.add(name);
+  }
+  if (dupes.size > 0) {
+    fail(`目录 types[].type 重复：${[...dupes].join(', ')}（类型名是白名单基准，必须唯一）`);
+  }
+});
+
+check('schema_version 存在且为 ≥ 1 的整数', () => {
+  const v = catalog.schema_version;
+  if (!Number.isInteger(v) || v < 1) {
+    fail(`目录 schema_version 必须是 ≥ 1 的整数，实际：${JSON.stringify(v)}`);
+  }
+});
+
+check(`types[].flint 非空（${catalogTypes.length}/${catalogTypes.length}）`, () => {
+  for (const t of catalog.types) {
+    if (typeof t.flint !== 'string' || t.flint.trim() === '') {
+      fail(`目录 ${t.type} 缺 flint（Flint 图型名，供两个转换器对拍）`);
+    }
+  }
+});
+
+check('types[].required_channels 取值 ∈ {x, y, series}', () => {
+  for (const t of catalog.types) {
+    const chs = t.required_channels;
+    if (!Array.isArray(chs) || chs.length === 0) {
+      fail(`目录 ${t.type} 的 required_channels 必须是非空数组，实际：${JSON.stringify(chs)}`);
+      continue;
+    }
+    const unknown = chs.filter((c) => !ALLOWED_CHANNELS.has(c));
+    if (unknown.length > 0) {
+      fail(`目录 ${t.type} 的 required_channels 含未知通道：${unknown.join(', ')}（只允许 x / y / series）`);
+    }
   }
 });
 
